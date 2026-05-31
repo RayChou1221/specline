@@ -22,7 +22,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zhouyushun/specline"
+    "url": "https://github.com/RayChou1221/specline"
   },
   "engines": {
     "node": ">=20.0.0"

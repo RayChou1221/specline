@@ -131,6 +131,7 @@ What would you like to do?
 - Update task checkbox immediately after completing each task
 - Pause on errors, blockers, or unclear requirements - don't guess
 - Use contextFiles from CLI output, don't assume specific file names
+- **Hook blocked → no silent fallback**: If this skill is invoked because a coding subagent (specline-frontend-dev / specline-backend-dev) was blocked by a hook, you MUST first notify the user of the blocking cause and attempt diagnosis. Do not silently execute tasks that should have been handled by the blocked subagent. Reference the Hook Blocking Resolution Protocol in the specline-pipeline skill.
 
 **Fluid Workflow Integration**
 

@@ -77,3 +77,4 @@ description: >-
 - 先读已有 dependency 再生成后续文件
 - 需求不明确时用结构化提问（AskUserQuestion）澄清
 - 优先做出合理判断保持节奏，只在关键不清时询问
+- **Hook 阻断不降级**：如果本 Skill 因 `specline-spec-creator` 子 Agent 被 hook 阻止而作为降级方案被调用，必须首先通知用户阻断原因，并尝试诊断修复（参考 specline-pipeline SKILL 中的 Hook 阻断处理规范）。不得在 hook 问题未解决时静默直接执行

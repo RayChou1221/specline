@@ -665,6 +665,81 @@ AskUserQuestion({
 - Gate 脚本不写事件日志（Gate 是无状态的），仅编排层写入
 - 事件日志用于人工排查问题和统计分析，不影响流水线决策
 
+## Hook 阻断处理规范（最高优先级）
+
+当任何子 Agent（specline-spec-creator / specline-spec-reviewer / specline-frontend-dev / specline-backend-dev / specline-code-reviewer / specline-test-writer / specline-test-runner）被 `subagentStart` hook 阻止时，**编排者绝对不允许静默降级为自己直接执行**。必须按以下流程处理：
+
+### 阻断诊断与修复流程
+
+**Step 1: 识别阻断原因**
+
+根据阻断信息判断原因类型，按优先级诊断：
+
+| 原因类型 | 典型症状 | 诊断命令 |
+|---------|---------|---------|
+| 脚本缺少执行权限 | "Permission denied" 或脚本执行失败 | `ls -la .cursor/hooks/specline-agent-guard.sh` |
+| `jq` 未安装 | jq 相关错误 | `which jq` |
+| Agent 名称不在白名单 | "子Agent类型 'xxx' 不在允许列表中" | 检查 `specline-agent-guard.sh` 中 `ALLOWED_AGENTS` 变量 |
+| hooks.json 缺失或不完整 | hook 未触发或配置错误 | 检查 `.cursor/hooks.json` 文件是否存在且内容完整 |
+
+**Step 2: 与用户沟通**
+
+使用结构化提问告知用户阻断情况和修复方案：
+
+```javascript
+AskUserQuestion({
+  title: "Hook 阻断 - 子 Agent 启动失败",
+  questions: [{
+    id: "hook_fix",
+    prompt: `子 Agent **${agentName}** 被 hook 阻止，诊断结果：
+
+**阻断原因**：${diagnosis}
+**影响**：${impact_description}
+
+**建议修复操作**：${fix_commands}
+
+请选择处理方式：`,
+    options: [
+      { id: "auto_fix", label: "自动修复（执行上述修复命令）" },
+      { id: "manual_fix", label: "我手动修复后通知你重试" },
+      { id: "skip_agent", label: "跳过此 Agent，由编排者直接执行（不推荐）" }
+    ]
+  }]
+})
+```
+
+**Step 3: 执行修复并重试**
+
+- `auto_fix` → 执行修复命令（如 `chmod +x .cursor/hooks/*.sh`、安装 `jq` 等），修复完成后立即重试启动子 Agent
+- `manual_fix` → 等待用户确认修复完成，然后重试启动子 Agent
+- `skip_agent` → **仅当用户明确选择时才降级为编排者直接执行**，并必须在事件日志中记录降级原因
+
+**Step 4: 验证修复结果**
+
+修复后重新启动子 Agent，如果仍然被阻止：
+- 重新诊断（可能是不同原因）
+- 再次与用户沟通（最多循环 2 次）
+- 2 次修复失败后，暂停流水线并报告用户，不得自行降级
+
+### 适用范围
+
+此规范适用于**所有 hook 阻断场景**，不限于 `specline-spec-creator`。包括：
+- `subagentStart` hook 阻止任何子 Agent 启动
+- `beforeShellExecution` hook 阻止命令执行
+- 任何其他 hook 导致的阻断
+
+### 事件日志
+
+每次 hook 阻断和修复必须记录到事件日志：
+
+```json
+{"ts":"...","event":"hook_blocked","agent":"specline-spec-creator","reason":"missing_jq","hook":"subagentStart"}
+{"ts":"...","event":"hook_fix_applied","agent":"specline-spec-creator","action":"brew install jq"}
+{"ts":"...","event":"agent_retry","agent":"specline-spec-creator","attempt":1}
+```
+
+---
+
 ## 关键约束
 
 1. **不做判断，只做编排**：不要评估代码质量、需求好坏、测试覆盖——这些由子 Agent 和 Gate 脚本负责
@@ -672,3 +747,4 @@ AskUserQuestion({
 3. **状态文件是唯一真相源**：所有决策基于 `.pipeline-state.json` 的当前值
 4. **人工确认点必须暂停**：不要自动跳过 human_gate
 5. **测试 Agent 必须黑盒**：不给 specline-test-writer 传递源代码文件路径
+6. **Hook 阻断绝不静默降级**：当子 Agent 被 hook 阻止时，必须先诊断、与用户沟通、修复后重试，不得直接由编排者代替执行（见上方 Hook 阻断处理规范）
