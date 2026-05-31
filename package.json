@@ -1,0 +1,30 @@
+{
+  "name": "specline",
+  "version": "1.0.0",
+  "description": "Spec-driven AI coding pipeline with deterministic quality gates for Cursor IDE",
+  "bin": {
+    "specline": "./cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "templates/"
+  ],
+  "keywords": [
+    "cursor",
+    "specline",
+    "spec-driven",
+    "ai-coding",
+    "pipeline",
+    "agent-orchestration",
+    "deterministic-gates",
+    "dev-pipeline"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhouyushun/specline"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
