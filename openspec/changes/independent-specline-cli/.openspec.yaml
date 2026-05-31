@@ -1,8 +1,0 @@
-schema: spec-driven
-created: 2026-05-31T23:57:00Z
-goal: 将 /dev-pipeline 打包为独立 CLI 工具，去 OpenSpec CLI 依赖，实现 specline init 一键初始化
-affected_areas:
-  - CLI
-  - Agents
-  - Skills
-  - Hooks
