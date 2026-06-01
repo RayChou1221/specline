@@ -8,7 +8,10 @@ import { get } from 'https';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(__dirname, 'templates');
-const VERSION = '1.0.0';
+
+// 从 package.json 读取版本号（由 npm version 命令自动维护）
+const PKG = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf-8'));
+const VERSION = PKG.version;
 
 // ============================================================
 // 共享工具函数 — 锁文件读写、哈希计算
