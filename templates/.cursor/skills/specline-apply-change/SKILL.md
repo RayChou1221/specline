@@ -13,6 +13,27 @@ Implement tasks from a Specline change.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
+## 速览 (Layer 1)
+
+> **一句话**：实现 Specline change 中的编码任务。
+> **入口**：`/specline-apply-change [change-name]` 或直接说「继续实现」
+> **流程**：选 change → 读上下文 → 逐任务实现 → 标记完成
+
+**Fluid Workflow Integration**
+
+This skill supports the "actions on a change" model:
+- **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
+- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly
+
+**开始前请确认：**
+- [ ] Change 已选中（`/specline-pipeline --change <name>`）
+- [ ] 已读取 proposal.md（知道做什么）
+- [ ] 已读取 spec.md（知道需求和场景）
+- [ ] 已读取 design.md（知道技术决策）
+- [ ] 已读取 tasks.md（知道实现清单）
+
+## 详细步骤 — Happy Path (Layer 2)
+
 **Steps**
 
 1. **Select the change**
@@ -48,7 +69,7 @@ Implement tasks from a Specline change.
    - Progress: "N/M tasks complete"
    - Remaining tasks overview
 
-6. **Implement tasks (loop until done or blocked)**
+5. **Implement tasks (loop until done or blocked)**
 
    For each pending task:
    - Show which task is being worked on
@@ -63,13 +84,17 @@ Implement tasks from a Specline change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-7. **On completion or pause, show status**
+6. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
    - If all done: suggest archive
    - If paused: explain why and wait for guidance
+
+## 输出模板 & 高级话题 (Layer 3)
+
+### 输出模板
 
 **Output During Implementation**
 
@@ -122,7 +147,7 @@ All tasks complete! Ready to archive this change.
 What would you like to do?
 ```
 
-**Guardrails**
+### Guardrails
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing
@@ -133,9 +158,10 @@ What would you like to do?
 - Use contextFiles from CLI output, don't assume specific file names
 - **Hook blocked → no silent fallback**: If this skill is invoked because a coding subagent (specline-frontend-dev / specline-backend-dev) was blocked by a hook, you MUST first notify the user of the blocking cause and attempt diagnosis. Do not silently execute tasks that should have been handled by the blocked subagent. Reference the Hook Blocking Resolution Protocol in the specline-pipeline skill.
 
-**Fluid Workflow Integration**
+### 暂停场景处理
 
-This skill supports the "actions on a change" model:
-
-- **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
-- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly
+当实现过程中出现以下情况时，暂停并等待用户指引：
+- 任务描述不清晰 → 请求用户澄清
+- 实现中暴露出设计问题 → 建议更新 Artifact（proposal / spec / design / tasks）
+- 遇到错误或阻塞 → 报告具体问题并等待指导
+- 用户主动中断 → 记录当前进度，下次可从断点继续

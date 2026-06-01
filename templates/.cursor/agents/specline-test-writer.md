@@ -103,7 +103,7 @@ Spec Scenario                         →  Test Function
 
 ## 产出报告
 
-完成后输出 JSON 到 `.cursor/tmp/test-code-result.json`：
+完成后输出 JSON 到 `specline/changes/<change>/.tmp/test-code-result.json`：
 
 ```json
 {

@@ -26,5 +26,9 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "test:update-sync": "node --test tests/cli-update-sync.test.mjs"
   }
 }

@@ -88,6 +88,7 @@ gate_new() {
   fi
 
   mkdir -p "$change_dir/specs"
+  mkdir -p "$change_dir/.tmp"
 
   # 写入 .specline.yaml
   cat > "$change_dir/.specline.yaml" << YAML
@@ -363,8 +364,8 @@ gate_lint() {
     fi
   fi
 
-  # code-review.json error 计数
-  local review_file="$PROJECT_ROOT/code-review.json"
+  # code-review.json error 计数（位于 change 的 .tmp/ 目录下）
+  local review_file="$PROJECT_ROOT/specline/changes/$CHANGE/.tmp/code-review.json"
   if [ -f "$review_file" ]; then
     local error_count
     error_count=$(jq '[.findings[] | select(.severity=="error")] | length' "$review_file" 2>/dev/null || echo "0")
@@ -583,6 +584,8 @@ gate_archive() {
 
     mv "$src_dir" "$dest"
     echo "✅ 已归档到: $dest"
+
+    # 临时文件（.tmp/）随 change 目录一起归档，无需单独清理
 
     # 更新状态文件
     if [ -f "$dest/.pipeline-state.json" ]; then

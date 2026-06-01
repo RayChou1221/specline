@@ -25,7 +25,7 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
 
 ## 输出格式
 
-产出 `code-review.json`：
+产出 `code-review.json` 到 `specline/changes/<change>/.tmp/code-review.json`：
 
 ```json
 {

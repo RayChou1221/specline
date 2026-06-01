@@ -34,7 +34,7 @@ description: 根据 Spec 编写后端代码（API 端点、数据模型、业务
 
 ## 产出报告
 
-完成后输出 JSON 到 `.cursor/tmp/task-<task-id>-result.json`：
+完成后输出 JSON 到 `specline/changes/<change>/.tmp/task-<task-id>-result.json`：
 
 ```json
 {

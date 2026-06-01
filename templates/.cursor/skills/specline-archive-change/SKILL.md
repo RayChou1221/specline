@@ -9,11 +9,31 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
-Archive a completed change in the experimental workflow.
+## TL;DR (Layer 1)
+
+> **一句话**：归档已完成的 Specline change。
+> **入口**：`/specline-archive-change [change-name]`
+> **流程**：选 change → 检查完成度 → Delta spec sync 决策 → 移动目录 → 完成
+
+### 归档前后目录结构变化
+
+```
+归档前 (活跃、可修改)              归档后 (只读、可追溯)
+
+specline/changes/                  specline/changes/
+├── my-change/          ──▶       ├── archive/
+│   ├── proposal.md               │   └── 2026-06-01-my-change/
+│   ├── design.md                 │       ├── proposal.md
+│   ├── tasks.md                  │       ├── design.md
+│   └── specs/                    │       ├── tasks.md
+                                  │       └── specs/
+```
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
-**Steps**
+---
+
+## Steps (Layer 2 — Happy Path)
 
 1. **If no change name provided, prompt for selection**
 
@@ -51,6 +71,18 @@ Archive a completed change in the experimental workflow.
    **If no tasks file exists:** Proceed without task-related warning.
 
 4. **Assess delta spec sync state**
+
+   **决策流程：**
+
+   ```
+   Delta specs 存在？
+   ├── 否 → 直接归档
+   └── 是 → 比较 delta spec 与 main spec
+              ├── 无差异 → 「已同步」→ 直接归档
+              └── 有差异 → 展示变更摘要 → 询问用户
+                            ├── 同步 → 执行 sync → 归档
+                            └── 跳过 → 归档
+   ```
 
    Check for delta specs at `specline/changes/<name>/specs/`. If none exist, proceed without sync prompt.
 
@@ -91,7 +123,7 @@ Archive a completed change in the experimental workflow.
    - Whether specs were synced (if applicable)
    - Note about any warnings (incomplete artifacts/tasks)
 
-**Output On Success**
+### Output On Success
 
 ```
 ## Archive Complete
@@ -104,7 +136,10 @@ Archive a completed change in the experimental workflow.
 All artifacts complete. All tasks complete.
 ```
 
-**Guardrails**
+---
+
+## Guardrails (Layer 3 — 高级话题)
+
 - Always prompt for change selection if not provided
 - Use artifact graph (specline-pipeline-gate.sh artifacts --json) for completion checking
 - Don't block archive on warnings - just inform and confirm

@@ -34,7 +34,7 @@ description: 根据 Spec 编写前端代码（UI 组件、页面、样式、交�
 
 ## 产出报告
 
-完成后输出 JSON 到 `.cursor/tmp/task-<task-id>-result.json`：
+完成后输出 JSON 到 `specline/changes/<change>/.tmp/task-<task-id>-result.json`：
 
 ```json
 {

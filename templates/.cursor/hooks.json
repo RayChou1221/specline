@@ -1,10 +1,31 @@
 {
   "version": 1,
   "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/specline-session-start.sh",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/specline-phase-guard.sh",
+        "matcher": "Write|StrReplace|EditNotebook|Task|Delete",
+        "timeout": 5,
+        "failClosed": false
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": ".cursor/hooks/specline-reminder.sh",
+        "matcher": "Task|Write|StrReplace|Shell",
+        "timeout": 5
+      }
+    ],
     "subagentStart": [
       {
         "command": ".cursor/hooks/specline-agent-guard.sh",
-        "matcher": "specline-spec-creator|specline-spec-reviewer|specline-frontend-dev|specline-backend-dev|specline-code-reviewer|specline-test-writer|specline-test-runner",
+        "matcher": "specline-spec-creator|specline-spec-reviewer|specline-frontend-dev|specline-backend-dev|specline-config-dev|specline-code-reviewer|specline-config-reviewer|specline-test-writer|specline-test-runner",
         "failClosed": true
       }
     ],
