@@ -595,6 +595,15 @@ gate_archive() {
       sed -i '' "s/\"current_phase\": \"[^\"]*\"/\"current_phase\": \"archived\"/g" "$dest/.pipeline-state.json" 2>/dev/null || true
     fi
 
+    # 清理所有绑定到该 change 的 session
+    local bindings_file="$PROJECT_ROOT/specline/.pipeline-sessions.json"
+    if [ -f "$bindings_file" ]; then
+      jq --arg change "$CHANGE" \
+        'with_entries(select(.value.change != $change))' \
+        "$bindings_file" > "${bindings_file}.tmp" && mv "${bindings_file}.tmp" "$bindings_file"
+      echo "✅ 已清理 pipeline '$CHANGE' 的所有 session 绑定"
+    fi
+
     exit 0
   fi
 
@@ -639,6 +648,31 @@ gate_status() {
   }' "$STATE_FILE"
 }
 
+gate_bind() {
+  local session_id="$1"
+  local target_change="$2"
+
+  if [ -z "$session_id" ] || [ -z "$target_change" ]; then
+    fail "需要 <session_id> <change_name>"
+  fi
+
+  local state_file="$PROJECT_ROOT/specline/changes/$target_change/.pipeline-state.json"
+  if [ ! -f "$state_file" ]; then
+    fail "Change '$target_change' 不存在"
+  fi
+
+  local bindings_file="$PROJECT_ROOT/specline/.pipeline-sessions.json"
+  [ ! -f "$bindings_file" ] && echo '{}' > "$bindings_file"
+
+  local now
+  now=$(now_iso8601)
+  jq --arg sid "$session_id" --arg change "$target_change" --arg time "$now" \
+    '.[$sid] = {"change": $change, "bound_at": $time}' \
+    "$bindings_file" > "${bindings_file}.tmp" && mv "${bindings_file}.tmp" "$bindings_file"
+
+  echo "✅ 已绑定 session '$session_id' → pipeline '$target_change'"
+}
+
 # ===== 分派 =====
 
 case "$PHASE" in
@@ -669,9 +703,12 @@ case "$PHASE" in
   test-e2e)
     gate_test_e2e
     ;;
+  bind)
+    gate_bind "$2" "$3"
+    ;;
   archive)
     gate_archive "$@"
-    ;;
+    ;; 
   status)
     gate_status
     ;;

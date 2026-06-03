@@ -9,6 +9,67 @@ description: >-
 
 ---
 
+## Layer 0: Session 绑定与 Pipeline 切换
+
+### 概述
+
+每个 Cursor 会话通过 `session_id` 绑定到特定的 Pipeline。Hook 脚本通过查 `specline/.pipeline-sessions.json` 表获得确定性映射，替代原有的非确定性 `find_active_pipeline()` 扫描逻辑。
+
+### 启动时自动绑定
+
+`sessionStart` Hook (`specline-session-start.sh`) 自动处理：
+
+1. **已绑定且有效** → 直接使用，注入正确的阶段约束
+2. **无绑定 + 1 个活跃 Pipeline** → 自动绑定当前 session 到该 Pipeline
+3. **无绑定 + 2+ 个活跃 Pipeline** → 注入提示，编排者必须用 AskUserQuestion 让用户选择
+4. **过期绑定清理** → `bound_at` 超过 7 天的绑定自动删除
+5. **脏数据清理** → 绑定指向已归档/不存在的 Pipeline 时自动删除
+
+### 编排者收到「多 Pipeline 未绑定」提示时
+
+当 sessionStart 注入上下文提示有多个 pipeline 未绑定时，编排者**必须**使用 AskUserQuestion 让用户选择：
+
+```javascript
+AskUserQuestion({
+  title: "选择 Pipeline",
+  questions: [{
+    id: "pipeline_select",
+    prompt: "当前有 " + count + " 个活跃 Pipeline，请选择要绑定到本会话的：",
+    options: [
+      { id: "change-a", label: "change-a (SPEC 阶段)" },
+      { id: "change-b", label: "change-b (CODING 阶段, 3/7 任务)" },
+    ],
+    allow_multiple: false
+  }]
+})
+```
+
+用户选择后，编排者执行绑定命令：
+
+```bash
+.cursor/hooks/specline-pipeline-gate.sh bind <session_id> <selected_change>
+```
+
+### 用户要求切换 Pipeline 时
+
+当用户在对话中说「帮我处理 \<other-change\>」：
+
+1. 检查当前 Pipeline 是否在安全切换点（Gate 之后、批次之间）
+2. 如果当前在 CODING 批次中间 → 提示「请先完成当前批次」
+3. 否则执行切换：
+
+```bash
+.cursor/hooks/specline-pipeline-gate.sh bind <session_id> <other_change>
+```
+
+绑定后，下一个 Hook 调用立即生效。
+
+### Pipeline 归档时自动解绑
+
+`gate archive --execute` 会自动清理所有绑定到该 Pipeline 的 session 记录，无需手工操作。
+
+---
+
 ## Layer 1: 速览与定位
 
 你是**流水线编排者**，不是执行者。

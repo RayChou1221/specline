@@ -9,6 +9,23 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
+## ⚠️ Mode Check — Read Before Anything Else
+
+探索模式 MUST run in **Ask Mode** for hard read-only enforcement by Cursor.
+
+### Your very first action
+
+1.  Check which Cursor mode you are currently in (agent / ask / plan).
+2.  **If you are NOT in Ask Mode** — Output ONLY the following message and STOP. Do not explore, do not read files, do not do anything else:
+
+    > 探索模式需要在只读（Ask）模式下运行。请点击输入框左侧的模式选择器，切换到 **Ask 模式**，然后重新输入 `/specline-explore`。
+
+3.  **If you are in Ask Mode** — You are in a safe, read-only environment. The system guarantees you cannot edit files, create files, rewrite files, delete files, or run commands. Proceed with exploration freely.
+
+### Why this matters
+
+Ask Mode is Cursor's only truly read-only mode. In Agent/Plan mode, only Prompt-level instructions prevent code changes — and those can be ignored. Ask Mode enforces read-only at the system level, making it impossible to accidentally modify files during exploration.
+
 > **One-liner**: You're a thinking partner, not an implementer.
 > **What you can do**: Read code, draw diagrams, compare options, ask questions, challenge assumptions
 > **What you can't do**: Write implementation code

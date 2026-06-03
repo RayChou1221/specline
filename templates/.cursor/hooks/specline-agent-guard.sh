@@ -12,6 +12,7 @@ set -euo pipefail
 
 input=$(cat)
 subagent_type=$(echo "$input" | jq -r '.subagent_type // empty')
+SESSION_ID=$(echo "$input" | jq -r '.session_id // empty')
 
 # 非 specline agent → 放行（不受 Specline 管控）
 if ! echo "$subagent_type" | grep -qE "^specline-"; then
@@ -32,29 +33,36 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CHANGES_DIR="$PROJECT_ROOT/specline/changes"
 
-# 查找活跃 pipeline
-find_active_pipeline() {
-  if [ ! -d "$CHANGES_DIR" ]; then
-    echo ""
-    return
+# 通过 session_id 解析绑定的 pipeline
+resolve_pipeline_for_session() {
+  local session_id="$1"
+  local bindings_file="$PROJECT_ROOT/specline/.pipeline-sessions.json"
+
+  if [ ! -f "$bindings_file" ]; then
+    return 1
   fi
-  for f in "$CHANGES_DIR"/*/.pipeline-state.json; do
-    [ -f "$f" ] || continue
-    if echo "$f" | grep -q "/archive/"; then continue; fi
-    local ph
-    ph=$(jq -r '.current_phase // ""' "$f" 2>/dev/null)
-    if [ "$ph" != "archive" ] && [ "$ph" != "" ]; then
-      echo "$f"
-      return
-    fi
-  done
-  echo ""
+
+  local change_name
+  change_name=$(jq -r --arg sid "$session_id" '.[$sid].change // empty' "$bindings_file" 2>/dev/null)
+
+  if [ -z "$change_name" ]; then
+    return 1
+  fi
+
+  local state_file="$CHANGES_DIR/$change_name/.pipeline-state.json"
+
+  if [ ! -f "$state_file" ]; then
+    # 脏数据：pipeline 已归档或不存在，清理绑定
+    jq --arg sid "$session_id" 'del(.[$sid])' "$bindings_file" > "${bindings_file}.tmp" && mv "${bindings_file}.tmp" "$bindings_file"
+    return 1
+  fi
+
+  STATE_FILE="$state_file"
+  return 0
 }
 
-STATE_FILE=$(find_active_pipeline)
-
-# 无活跃 pipeline → 放行（不在流水线中的会话可以使用任何 specline agent）
-if [ -z "$STATE_FILE" ]; then
+STATE_FILE=""
+if ! resolve_pipeline_for_session "$SESSION_ID"; then
   echo '{"permission": "allow"}'
   exit 0
 fi
