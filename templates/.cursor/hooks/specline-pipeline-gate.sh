@@ -15,19 +15,27 @@
 
 set -euo pipefail
 
-# ===== 参数解析 =====
 PHASE="${1:-}"
 CHANGE=""
-if [ "$#" -ge 3 ] && [ "$2" = "--change" ]; then
-  CHANGE="$3"
-fi
+EXECUTE_ARCHIVE=""
 
-if [ -z "$PHASE" ]; then
-  echo "Usage: specline-pipeline-gate.sh <phase> --change <change-name>"
-  echo "Phases: new | list | artifacts | spec | build | lint | test-unit | test-integration | test-e2e | archive | status"
-  exit 2
-fi
-
+# 遍历所有参数，不依赖位置
+shift  # 跳过 PHASE
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --change)
+      CHANGE="$2"
+      shift 2
+      ;;
+    --execute)
+      EXECUTE_ARCHIVE="--execute"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
 # ===== 项目根目录 =====
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -300,7 +308,31 @@ gate_spec() {
   fi
   pass "tasks.md 标注完整性检查通过 ($task_count 个任务)"
 
-  # 10. 至少 1 个任务无依赖
+  # 10. Testable 字段校验
+  local testable_count
+  testable_count=$(grep -c '\*\*Testable\*\*:' "$tasks_file" || echo "0")
+
+  if [ "$testable_count" -eq 0 ]; then
+    echo "⚠️  Testable 标注缺失（向后兼容模式：缺失字段的任务将被视为 Testable: false）"
+  elif [ "$testable_count" -gt 0 ] && [ "$testable_count" -lt "$task_count" ]; then
+    local missing_testable_tasks
+    missing_testable_tasks=$(awk '
+      /^## / {
+        if (in_task && !has_testable) missing = missing (missing ? ", " : "") prev_task
+        prev_task = $2; gsub(/\..*/, "", prev_task)
+        in_task = 1; has_testable = 0
+      }
+      /\*\*Testable\*\*:/ { has_testable = 1 }
+      END {
+        if (in_task && !has_testable) missing = missing (missing ? ", " : "") prev_task
+        print missing
+      }' "$tasks_file")
+    echo "⚠️  Testable 标注不完整：任务=$task_count, Testable=$testable_count（缺失任务: $missing_testable_tasks；缺失字段的任务将被视为 Testable: false）"
+  else
+    pass "Testable 标注完整性检查通过 ($testable_count/$task_count)"
+  fi
+
+  # 11. 至少 1 个任务无依赖
   local independent_count
   independent_count=$(grep -c '\*\*Depends\*\*: (none)' "$tasks_file" || echo "0")
   if [ "$independent_count" -lt 1 ]; then
@@ -335,6 +367,86 @@ gate_build() {
       fail "Python 语法错误"
     fi
     pass "Python 语法检查通过"
+  fi
+
+  # 单元测试文件存在性检查（Testable=true 任务）
+  local tasks_file="$PROJECT_ROOT/specline/changes/$CHANGE/tasks.md"
+  if [ -f "$tasks_file" ]; then
+    local testable_true_count
+    testable_true_count=$(grep -c '\*\*Testable\*\*:.*true' "$tasks_file" || echo "0")
+
+    if [ "$testable_true_count" -gt 0 ]; then
+      echo "正在检查 $testable_true_count 个 Testable=true 任务的单元测试文件..."
+
+      local missing_files=""
+      local syntax_errors=""
+
+      while IFS='|' read -r task_id file_path; do
+        if [ -z "$file_path" ]; then
+          missing_files="${missing_files}
+  任务 $task_id: 未在 Files 列表中声明 tests/unit/ 或 tests/models/ 下的测试文件"
+          continue
+        fi
+
+        if [ ! -f "$PROJECT_ROOT/$file_path" ]; then
+          missing_files="${missing_files}
+  任务 $task_id: $file_path"
+          continue
+        fi
+
+        # 语法检查
+        case "$file_path" in
+          *.py)
+            if ! python -m py_compile "$PROJECT_ROOT/$file_path" 2>&1; then
+              syntax_errors="${syntax_errors}
+  任务 $task_id: $file_path (Python 语法错误)"
+            fi
+            ;;
+          *.ts|*.tsx)
+            if ! npx tsc --noEmit "$PROJECT_ROOT/$file_path" 2>&1; then
+              syntax_errors="${syntax_errors}
+  任务 $task_id: $file_path (TypeScript 语法错误)"
+            fi
+            ;;
+        esac
+      done < <(awk '
+        /^## / {
+          task_id = $2; gsub(/\..*/, "", task_id)
+          testable = ""; files_line = ""
+        }
+        /\*\*Testable\*\*:.*true/ { testable = "true" }
+        /\*\*Files\*\*:/ {
+          if (testable == "true") {
+            files_line = $0
+            gsub(/.*\*\*Files\*\*:[ \t]*/, "", files_line)
+            split(files_line, paths, /,[ \t]*/)
+            has_unit_test = 0
+            for (i in paths) {
+              gsub(/^[ \t]+|[ \t]+$/, "", paths[i])
+              if (paths[i] ~ /^tests\/(unit|models)\//) {
+                print task_id "|" paths[i]
+                has_unit_test = 1
+              }
+            }
+            if (has_unit_test == 0) {
+              print task_id "|"
+            }
+          }
+        }
+      ' "$tasks_file")
+
+      if [ -n "$missing_files" ]; then
+        fail "单元测试文件缺失:${missing_files}"
+      fi
+
+      if [ -n "$syntax_errors" ]; then
+        fail "单元测试文件语法错误:${syntax_errors}"
+      fi
+
+      pass "单元测试文件存在性检查通过"
+    else
+      echo "ℹ️  无 Testable=true 任务，跳过单元测试文件检查"
+    fi
   fi
 
   write_gate_passed "phases.coding.gates.build_gate"
@@ -551,7 +663,7 @@ gate_archive() {
   fi
 
   # 如果传了 --execute，执行实际归档动作
-  if [ "${1:-}" = "--execute" ]; then
+  if [ -n "$EXECUTE_ARCHIVE" ]; then
     local src_dir="$PROJECT_ROOT/specline/changes/$CHANGE"
     local archive_dir="$PROJECT_ROOT/specline/changes/archive"
     local date_prefix

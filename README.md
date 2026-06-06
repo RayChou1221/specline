@@ -8,7 +8,15 @@
 /specline-pipeline "实现用户登录功能"
 ```
 
+修 bug、改配置、文档微调？用轻量模式：
+
+```
+/specline-quickfix "修复登录按钮样式"
+```
+
 ## 它能做什么
+
+**完整流水线**（新功能、重构）：
 
 ```
 自然语言需求 → Spec → 审核 → 编码 → 审查 → 测试 → 归档
@@ -18,12 +26,20 @@
                   并行              reviewer  E2E
 ```
 
+**轻量修复**（修 bug、改配置、文档微调）：
+
+```
+/ specline-quickfix "描述" → 理解代码 → 直接编辑 → Lint+自审 → 现有单测 → 轻量归档
+                             0 个子 Agent      0 个人工确认      0 个 state 文件
+```
+
 每个阶段都经过 **确定性门禁校验** —— 用 `grep`、`jq`、编译器退出码、测试退出码判断通过与否。**质量判断零 LLM 参与**。
 
 ## 核心特性
 
 - **需求驱动**：自然语言 → 结构化规格文档（Requirements + Scenarios + WHEN/THEN）
 - **并行编码**：自动按前端/后端/config 拆分任务，同批次并发派发 Coding Agent
+- **TDD 白盒测试**：无依赖任务自动启用 TDD 模式（先写单测 → 确认失败 → 最小实现 → 重构），与黑盒 test-writer 并行协作
 - **确定性门禁**：每个阶段用 Shell 脚本的退出码判定是否通过，不做模糊判断
 - **黑盒测试**：测试 Agent 只看 Spec 文档，不能读取任何实现源码
 - **断点续跑**：随时中断，下次从最后一个可信门禁自动恢复（tasks.md 的 `[x]`/`[ ]` 标记进度）
@@ -59,8 +75,8 @@ specline sync --dry-run    # 预览变更
 my-project/
 ├── .cursor/
 │   ├── agents/          ← 9 个 Specline Agent 定义
-│   ├── commands/        ← 2 个 Slash 命令入口
-│   ├── skills/          ← 5 个 Skill 指令
+│   ├── commands/        ← 3 个 Slash 命令入口
+│   ├── skills/          ← 6 个 Skill 指令
 │   ├── hooks/           ← 7 个 Gate/Hook 脚本
 │   └── hooks.json       ← Cursor Hook 配置
 ├── specline/            ← 运行时目录
@@ -77,13 +93,36 @@ my-project/
 /specline-pipeline "添加 JWT 用户认证"
 ```
 
+小改动用快速模式：
+
+```
+/specline-quickfix "修改按钮颜色"
+```
+
 开始编码前先探索思路：
 
 ```
 /specline-explore
 ```
 
-## 流水线阶段
+## 工作流选择
+
+Specline 提供两种工作流，按变更规模选择：
+
+| 维度 | Quickfix (`/specline-quickfix`) | Pipeline (`/specline-pipeline`) |
+|------|-------------------------------|-------------------------------|
+| 文件改动数 | 1-3 个 | 4+ 个 |
+| 关注点 | 单一关注点 | 多关注点/跨模块 |
+| 架构变更 | 无新架构/新组件 | 需要新组件/新 API |
+| 测试 | 不需要新测试 | 需要写新测试 |
+| 典型场景 | 修 bug、改配置、文档微调 | 新增功能、重构 |
+| 产出 | summary.md + files-changed.json | proposal/design/tasks/specs + 全部测试 |
+| 人工确认 | 0 个 | 3 个 |
+| 耗时 | 1-3 分钟 | 10-30 分钟 |
+
+**使用建议**：如果不确定，优先用 quickfix。如果需要更严格的流程保证，用 pipeline。
+
+## 完整流水线阶段
 
 ```
 PHASE 1: SPEC（规格）
@@ -91,15 +130,16 @@ PHASE 1: SPEC（规格）
     ├── proposal.md    — 需求提案（What/Why/Scope）
     ├── specs/*/spec.md — 功能规格（Requirements/Scenarios/WHEN-THEN）
     ├── design.md      — 技术设计（架构/数据流/决策）
-    └── tasks.md       — 任务清单（Type/Depends/Covers/Files + [ ] 进度标记）
+    └── tasks.md       — 任务清单（Type/Depends/Covers/Testable/Files + [ ] 进度标记）
   → specline-spec-reviewer 审核
   → Gate: grep + jq 格式校验
   → 🟡 人工确认 Spec 和任务规划
 
 PHASE 2: CODING（编码）
   解析 tasks.md → 按依赖 DAG 分层 → 同批次前后端/config Agent 并发
+  无依赖 + 可测试任务 → 自动启用 TDD 模式（RED-GREEN-REFACTOR）
   每完成一个任务，[ ] 自动标记为 [x]
-  → Gate: 编译检查（tsc --noEmit / python -m compileall）
+  → Gate: 编译检查（tsc --noEmit / python -m compileall） + 单元测试文件存在性检查
 
 PHASE 3: REVIEW（审查）
   specline-code-reviewer + specline-config-reviewer 分别审查代码和配置/文档
@@ -116,16 +156,55 @@ PHASE 5: ARCHIVE（归档）
   → delta specs 合并到主规格目录
   → 按日期归档到 specline/changes/archive/
   ✅ 完成
+
+### TDD 白盒测试
+
+Pipeline 采用「两层测试分离」架构：
+
+```
+Coding Agent（白盒 TDD）              Test-Writer（黑盒）
+─────────────────────────            ─────────────────
+产出: tests/unit/**                  产出: tests/integration/**
+      tests/models/**                      tests/e2e/**
+测试: 单个函数的输入输出              测试: 跨模块的用户行为
+      边界条件、异常路径                     API 端到端契约
+      Spec Scenario 全覆盖
+触发: 编码时同步产出                   触发: Phase 2 与 Coding 并行启动
+      先写测试 → 确认失败 → 写实现        只读 Spec，不读源码
+```
+
+tasks.md 中 `Testable: true` 的任务自动启用 TDD 模式（完整 RED-GREEN-REFACTOR 循环），`Testable: false` 的任务保持原有流程。两个测试域严格目录隔离，冲突检测自动识别越界。
+```
+
+## 轻量修复流程
+
+```
+PHASE 1: UNDERSTAND（理解）
+  读取相关代码 → 理解上下文 → 意图模糊时 AskUserQuestion 确认
+
+PHASE 2: IMPLEMENT（实现）
+  直接 Write/StrReplace 编辑 1-3 个文件
+  不需要 Spec 文档、DAG 构建、批次调度
+
+PHASE 3: REVIEW（审查）
+  ReadLints 检查 + 自动修复（最多 2 次）→ Agent 自审逻辑正确性
+
+PHASE 4: TEST（测试）
+  仅运行项目已有单元测试，无测试则跳过
+  失败自动修复最多 2 次
+
+PHASE 5: ARCHIVE（归档）
+  生成 summary.md + files-changed.json → 询问是否 git commit
 ```
 
 ## 架构
 
 ```
-/specline-pipeline       ← 你输入这个
-    │
-    ▼
-specline-pipeline SKILL  ← 编排层（读状态、派发 Agent、调 Gate）
-    │
+/specline-pipeline       ← 完整流水线（大功能）    /specline-quickfix    ← 轻量修复（小改动）
+    │                                                  │
+    ▼                                                  ▼
+specline-pipeline SKILL  ← 编排层                 编排者直接执行（无子 Agent）
+    │                                               Read → Write → ReadLints → Shell → 归档
 ┌───┼──────────────────┬──────────────────────┐
 ▼   ▼                  ▼                      ▼
 9 个子 Agent      specline-pipeline-     Cursor Hooks
@@ -149,13 +228,13 @@ specline-pipeline SKILL  ← 编排层（读状态、派发 Agent、调 Gate）
 |-------|------|
 | `specline-spec-creator` | 根据自然语言需求，基于内联模板直接生成 proposal/design/tasks/spec 四个文件 |
 | `specline-spec-reviewer` | 审核规格的完整性、一致性和覆盖度 |
-| `specline-frontend-dev` | UI 组件、页面、样式、交互逻辑（单个任务级别） |
-| `specline-backend-dev` | API 端点、数据模型、业务逻辑（单个任务级别） |
+| `specline-frontend-dev` | UI 组件、页面、样式、交互逻辑（单个任务级别，Testable 任务启用 TDD） |
+| `specline-backend-dev` | API 端点、数据模型、业务逻辑（单个任务级别，Testable 任务启用 TDD） |
 | `specline-config-dev` | Shell 脚本、配置文件（JSON/YAML）、Markdown 文档（处理 Type: config/docs 任务） |
 | `specline-code-reviewer` | 前端/后端代码质量、安全性、可维护性审查 |
 | `specline-config-reviewer` | Shell 脚本安全性、配置文件语法和一致性、Markdown 文档结构审查 |
-| `specline-test-writer` | 黑盒测试编写——只能看 Spec，不能读源码 |
-| `specline-test-runner` | 执行测试并分类失败原因（测试问题/代码问题/Spec 模糊） |
+| `specline-test-writer` | 黑盒测试编写——只能看 Spec 不能读源码，仅写集成测试（tests/integration/）和 E2E 测试 |
+| `specline-test-runner` | 执行测试并分类失败原因（测试问题/代码问题/Spec 模糊），区分单元测试（回 coding agent）和集成/E2E 测试（回 test-writer） |
 
 ## 确定性门禁
 
@@ -163,8 +242,8 @@ specline-pipeline SKILL  ← 编排层（读状态、派发 Agent、调 Gate）
 
 | 门禁 | 检查内容 |
 |------|---------|
-| Spec | `grep` 检查 Purpose/Requirements/Scenarios 章节完整性、WHEN/THEN 配对 |
-| Build | `tsc --noEmit` / `python -m compileall` 编译检查 |
+| Spec | `grep` 检查 Purpose/Requirements/Scenarios 章节完整性、WHEN/THEN 配对、Testable 字段格式与一致性 |
+| Build | `tsc --noEmit` / `python -m compileall` 编译检查 + Testable 任务单元测试文件存在性与语法检查 |
 | Lint | `ruff` / `eslint` 退出码 + code-review.json 中 error 数量 |
 | Test | 测试框架退出码 + 覆盖率阈值 |
 | Archive | 归档目录结构 + 必要文件完整性 |

@@ -13,42 +13,18 @@ description: >-
 
 ### 概述
 
-每个 Cursor 会话通过 `session_id` 绑定到特定的 Pipeline。Hook 脚本通过查 `specline/.pipeline-sessions.json` 表获得确定性映射，替代原有的非确定性 `find_active_pipeline()` 扫描逻辑。
+每个 Cursor 会话通过 `session_id` **显式绑定**到特定的 Pipeline（通过 `/specline-pipeline --change <name>` 命令）。Hook 脚本通过查 `specline/.pipeline-sessions.json` 表获得确定性映射。
 
-### 启动时自动绑定
+### 启动时行为
 
 `sessionStart` Hook (`specline-session-start.sh`) 自动处理：
 
 1. **已绑定且有效** → 直接使用，注入正确的阶段约束
-2. **无绑定 + 1 个活跃 Pipeline** → 自动绑定当前 session 到该 Pipeline
-3. **无绑定 + 2+ 个活跃 Pipeline** → 注入提示，编排者必须用 AskUserQuestion 让用户选择
-4. **过期绑定清理** → `bound_at` 超过 7 天的绑定自动删除
-5. **脏数据清理** → 绑定指向已归档/不存在的 Pipeline 时自动删除
+2. **无绑定** → 透明放行（`echo '{}'`），不自动扫描活跃 pipeline，不注入任何上下文
+3. **过期绑定清理** → `bound_at` 超过 7 天的绑定自动删除
+4. **脏数据清理** → 绑定指向已归档/不存在的 Pipeline 时自动删除
 
-### 编排者收到「多 Pipeline 未绑定」提示时
-
-当 sessionStart 注入上下文提示有多个 pipeline 未绑定时，编排者**必须**使用 AskUserQuestion 让用户选择：
-
-```javascript
-AskUserQuestion({
-  title: "选择 Pipeline",
-  questions: [{
-    id: "pipeline_select",
-    prompt: "当前有 " + count + " 个活跃 Pipeline，请选择要绑定到本会话的：",
-    options: [
-      { id: "change-a", label: "change-a (SPEC 阶段)" },
-      { id: "change-b", label: "change-b (CODING 阶段, 3/7 任务)" },
-    ],
-    allow_multiple: false
-  }]
-})
-```
-
-用户选择后，编排者执行绑定命令：
-
-```bash
-.cursor/hooks/specline-pipeline-gate.sh bind <session_id> <selected_change>
-```
+> **重要**：sessionStart 不再自动扫描和绑定活跃 pipeline。要绑定到一个 Pipeline，需要显式执行 `/specline-pipeline --change <name>`。
 
 ### 用户要求切换 Pipeline 时
 
@@ -104,6 +80,21 @@ AskUserQuestion({
 ### 最终产出
 
 归档到 `specline/changes/archive/YYYY-MM-DD-<name>/`
+
+### Quickfix vs Pipeline 边界判断
+
+| 维度 | Quickfix (`/specline-quickfix`) | Pipeline (`/specline-pipeline`) |
+|------|-------------------------------|-------------------------------|
+| 文件改动数 | 1-3 个 | 4+ 个 |
+| 关注点 | 单一关注点 | 多关注点/跨模块 |
+| 架构变更 | 无新架构/新组件 | 需要新组件/新 API |
+| 测试 | 不需要新测试 | 需要写新测试 |
+| 典型场景 | 修 bug、改配置、文档微调 | 新增功能、重构 |
+| 产出 | summary.md + files-changed.json | proposal/design/tasks/specs + 全部测试 |
+| 人工确认 | 0 个 | 3 个 |
+| 耗时 | 1-3 分钟 | 10-30 分钟 |
+
+**使用建议**：如果不确定，优先用 quickfix。如果需要更严格的流程保证，用 pipeline。
 
 ---
 
@@ -266,6 +257,7 @@ Task({
 2. 先检测项目的测试框架（读配置文件），按项目实际语言和框架编写测试
 3. 每个 Scenario 至少生成 1 个对应的测试函数（命名遵循框架约定）
 4. 基于 Covers 追溯链，确保每个 Scenario 都有测试
+5. 只编写 tests/integration/** 和 tests/e2e/** 目录下的测试，不得编写 tests/unit/** 和 tests/models/** 下的测试（单元测试由 coding agent 的 TDD 流程负责）
 
 ## 产出报告
 完成后在 specline/changes/${changeName}/.tmp/test-code-result.json 写入状态（含 test_framework / language / test_dir / scenarios_covered 等字段）
@@ -285,16 +277,17 @@ Task({
 TASKS_FILE="specline/changes/<name>/tasks.md"
 
 # 提取每个任务的核心元数据
-# 期望输出格式：TASK_NUM|TYPE|DEPS|COVERS|FILES
-rg -N --no-line-number '^## \d+\.|^- \*\*Type\*\*:|^- \*\*Depends\*\*:|^- \*\*Covers\*\*:|^- \*\*Files\*\*:' "$TASKS_FILE" | while read -r line; do
+# 期望输出格式：TASK_NUM|TYPE|DEPS|COVERS|FILES|TESTABLE
+rg -N --no-line-number '^## \d+\.|^- \*\*Type\*\*:|^- \*\*Depends\*\*:|^- \*\*Covers\*\*:|^- \*\*Files\*\*:|^- \*\*Testable\*\*:' "$TASKS_FILE" | while read -r line; do
   # 解析并按批次分组
   ...
 done
 
-# 构建任务列表写入状态文件（含 Files 用于冲突检测，Covers 用于追溯）
+# 构建任务列表写入状态文件（含 Files 用于冲突检测，Covers 用于追溯，Testable 用于 TDD 判定）
+# Testable 缺失时默认为 false（向后兼容）
 jq --argjson tasks '[
-  {"id":"1","type":"backend","deps":[],"batch":1,"status":"pending","covers":"Requirement: 数据模型","files":["server/models.py"]},
-  {"id":"2","type":"frontend","deps":[],"batch":1,"status":"pending","covers":"Requirement: 登录页面","files":["src/components/Login.tsx"]}
+  {"id":"1","type":"backend","deps":[],"batch":1,"status":"pending","testable":true,"covers":"Requirement: 数据模型","files":["server/models.py"]},
+  {"id":"2","type":"frontend","deps":[],"batch":1,"status":"pending","testable":false,"covers":"Requirement: 登录页面","files":["src/components/Login.tsx"]}
 ]' '.phases.coding.tasks = $tasks' "$STATE_FILE" > tmp && mv tmp "$STATE_FILE"
 ```
 
@@ -304,12 +297,31 @@ jq --argjson tasks '[
 
 **6c. 文件冲突检测（每批次派发前）**：
 
-在派发每批任务之前，检查该批次中所有任务的 `Files` 集合是否有交集：
+在派发每批任务之前，将当前批次所有任务的 `Files` 按路径前缀分为三类进行冲突检测：
+
+**文件类型分类规则**：
+
+| 文件类型 | 路径前缀 | 编写者 | 说明 |
+|---------|---------|--------|------|
+| `implementation` | 不以 `tests/` 开头 | coding agent | 实现代码、配置文件、文档等 |
+| `unit_test` | `tests/unit/` 或 `tests/models/` | coding agent（TDD） | 白盒单元测试 |
+| `other_test` | `tests/integration/` 或 `tests/e2e/` | test-writer | 黑盒集成/E2E 测试 |
+
+**冲突判定逻辑**：
+
+| 场景 | 判定 |
+|------|------|
+| 同类型文件重叠（均为 `implementation`、`unit_test` 或 `other_test`） | **冲突** |
+| `unit_test` 与 `other_test` 重叠 | **不冲突**（目录隔离保证互不干扰） |
+| `implementation` 与任何测试文件重叠 | **不冲突**（实现和测试天然分离） |
 
 ```bash
-# 伪代码：检测当前批次任务的文件冲突
-# 读取当前批次所有任务的 files 数组
-# 如果有任意两个任务的 files 有交集 → 标记冲突任务对，暂停并报告用户
+# 伪代码：基于文件类型的三类冲突检测算法
+# 1. 读取当前批次所有任务的 files 数组
+# 2. 对每个文件按路径前缀分类：implementation / unit_test / other_test
+# 3. 在同类型文件集合内检查是否有交集
+# 4. 如果同类型 files 有交集 → 标记冲突任务对，暂停并报告用户
+# 5. 跨类型重叠不标记为冲突
 ```
 
 #### Step 7: 按批次并发派发 Coding Agent
@@ -340,10 +352,114 @@ for (const task of currentBatchTasks) {
     default: agentType = "specline-backend-dev";
   }
 
-  Task({
-    subagent_type: agentType,
-    description: `实现任务 ${task.id}: ${task.title} [${task.type}]`,
-    prompt: `
+  // 根据 Testable 和 Type 构造 Prompt
+  let prompt;
+  if (task.testable === true) {
+    // === TDD prompt（Testable: true） ===
+    prompt = `
+你收到一个编码任务（Type: ${task.type}, Testable: true），请按 TDD（测试驱动开发）方式实现本任务范围内的代码。
+
+## 上下文文件（只读参考）
+- Spec: specline/changes/${changeName}/specs/${capability}/spec.md
+- Design: specline/changes/${changeName}/design.md
+- Tasks: specline/changes/${changeName}/tasks.md
+
+## 当前任务（只实现这个）
+任务 ID: ${task.id}
+覆盖需求: ${task.covers}
+预期文件: ${task.files}
+
+从 tasks.md 中提取的任务 ${task.id} 的完整描述：
+---
+${task.content}
+---
+
+## TDD 约束（RED-GREEN-REFACTOR）
+
+你必须按以下 TDD 循环编写代码：
+
+### RED 阶段
+1. 分析 Spec 中本任务覆盖的 Scenario，提取需要测试的逻辑单元
+2. 在 tests/unit/<module>/test_<feature>.{ext} 下编写测试文件
+3. 每个 Scenario 至少 1 个测试函数/方法
+4. 覆盖：Happy Path + 边界条件（空值、极值、边界值）+ 异常路径（错误输入、异常状态）
+5. 运行测试，确认全部 FAIL（RED）
+
+### GREEN 阶段
+6. 编写最小实现代码，只使当前测试通过
+7. 不编写测试未覆盖的逻辑
+8. 运行测试，确认全部 PASS（GREEN）
+
+### REFACTOR 阶段
+9. 重构实现代码改善结构（提取方法、消除重复、优化命名）
+10. 运行测试，确保持续 PASS
+11. 如果需要，补充缺失的边界条件测试
+
+## 关键约束
+1. 只修改本任务 Files 范围内的文件
+2. 不修改其他任务负责的文件
+3. 与已完成任务的接口约定必须遵守（参考已生成的接口/类型定义文件）
+4. 确认过 design.md 中的技术决策后再动手
+5. 测试文件只能写入 tests/unit/ 或 tests/models/ 目录
+6. 不得修改 tests/integration/ 或 tests/e2e/ 目录下的文件（属于 test-writer）
+7. **完成后必须将 tasks.md 中本任务的 \`[ ]\` 改为 \`[x]\`**（方便断点续跑识别进度）
+
+## 产出报告
+完成后在 specline/changes/${changeName}/.tmp/task-${task.id}-result.json 写入：
+{
+  "task_id": "${task.id}",
+  "type": "${task.type}",
+  "testable": true,
+  "covers": "${task.covers}",
+  "status": "completed",
+  "files_changed": [...],
+  "test_files": ["tests/unit/...", ...],
+  "tests_passed": true,
+  "summary": "..."
+}
+`;
+  } else if (["frontend", "backend", "infra", "db"].includes(task.type)) {
+    // === 标准编码 prompt（Testable: false，有代码逻辑） ===
+    prompt = `
+你收到一个编码任务（Type: ${task.type}, Testable: false），请只实现本任务范围内的代码。
+
+## 上下文文件（只读参考）
+- Spec: specline/changes/${changeName}/specs/${capability}/spec.md
+- Design: specline/changes/${changeName}/design.md
+- Tasks: specline/changes/${changeName}/tasks.md
+
+## 当前任务（只实现这个）
+任务 ID: ${task.id}
+覆盖需求: ${task.covers}
+预期文件: ${task.files}
+
+从 tasks.md 中提取的任务 ${task.id} 的完整描述：
+---
+${task.content}
+---
+
+## 约束
+1. 只修改本任务 Files 范围内的文件
+2. 不修改其他任务负责的文件
+3. 与已完成任务的接口约定必须遵守（参考已生成的接口/类型定义文件）
+4. 确认过 design.md 中的技术决策后再动手
+5. **完成后必须将 tasks.md 中本任务的 \`[ ]\` 改为 \`[x]\`**（方便断点续跑识别进度）
+
+## 产出报告
+完成后在 specline/changes/${changeName}/.tmp/task-${task.id}-result.json 写入：
+{
+  "task_id": "${task.id}",
+  "type": "${task.type}",
+  "testable": false,
+  "covers": "${task.covers}",
+  "status": "completed",
+  "files_changed": [...],
+  "summary": "..."
+}
+`;
+  } else {
+    // === 配置/文档 prompt（Type: config/docs） ===
+    prompt = `
 你收到一个编码任务（Type: ${task.type}），请只实现本任务范围内的代码。
 
 ## 上下文文件（只读参考）
@@ -378,15 +494,25 @@ ${task.content}
   "files_changed": [...],
   "summary": "..."
 }
-`
+`;
+  }
+
+  Task({
+    subagent_type: agentType,
+    description: `实现任务 ${task.id}: ${task.title} [${task.type}]${task.testable ? ' (TDD)' : ''}`,
+    prompt: prompt
   })
 }
 ```
 
 **7b. 等待当前批次所有 Agent 完成后**：
 1. 验证每个 Agent 的产出报告（`specline/changes/<name>/.tmp/task-<id>-result.json`）
-2. 更新状态文件中对应 task 的 `status` 和 `completed_at`
-3. **验证 tasks.md 中对应任务的 checkbox 已从 `[ ]` 变为 `[x]`**（如果未标记，自动补标）
+2. **对 Testable=true 的任务**，验证 `task-<id>-result.json` 中是否包含 `test_files` 字段且其值非空。如果 Testable=true 但 agent 未产出测试文件，标记为 warning 并记录到事件日志：
+   ```
+   {"ts":"...","event":"tdd_warning","task":"<id>","reason":"Testable=true but no test_files produced"}
+   ```
+3. 更新状态文件中对应 task 的 `status` 和 `completed_at`
+4. **验证 tasks.md 中对应任务的 checkbox 已从 `[ ]` 变为 `[x]`**（如果未标记，自动补标）
 
 ```bash
 # 更新状态文件
@@ -411,6 +537,10 @@ sed -i '' "s/^## ${task_id}\. \[ \]/## ${task_id}. [x]/" specline/changes/<name>
 .cursor/hooks/specline-pipeline-gate.sh build --change "<name>"
 ```
 
+Build Gate 校验内容：
+- 编译/语法检查（原有逻辑）
+- **单元测试文件存在性检查**（新增）：对 Testable=true 的任务，检查其 `tests/unit/` 和 `tests/models/` 下的单元测试文件是否存在且语法正确。如果 Testable=true 的任务未产出对应测试文件，Build Gate 失败
+
 exit code 0 = 通过，进入 Phase 3。失败处理见 [Layer 3: Build Gate 失败处理](#build-gate-失败处理)。
 
 ### Phase 3: CODE REVIEW
@@ -423,11 +553,21 @@ exit code 0 = 通过，进入 Phase 3。失败处理见 [Layer 3: Build Gate 失
 
 审查前端/后端代码变更。审查时利用 tasks.md 的 `Covers` 追溯链：每个 finding 应标注涉及的文件和对应的 Requirement/Scenario。
 
+对 Testable=true 的任务，额外审查其 `tests/unit/` 和 `tests/models/` 下的单元测试文件质量，包括：
+- 边界条件覆盖（空值、极值、边界值）
+- 异常路径覆盖（错误输入、异常状态）
+- 测试断言的有效性
+
+code-review.json 中 unit test 相关的 finding 标注 `type` 为 `"unit_test_quality"`，示例：
+```json
+{ "severity": "warning", "type": "unit_test_quality", "file": "tests/unit/auth/test_login.py", "covers": "Requirement: Coding Agent Prompt 条件化 TDD 注入", "message": "缺少空密码输入边界条件测试" }
+```
+
 **9b. specline-config-reviewer**（有 config/docs 类型任务时）：
 
 审查 config/docs 变更——shell 脚本安全性、配置文件语法和一致性、Markdown 文档结构完整性。
 
-> 两种审查 Agent 可并发启动。产出均为 `specline/changes/<name>/.tmp/code-review.json`（`{ "findings": [{ "severity": "error"|"warning", "file": "...", "covers": "Requirement: xxx", "message": "..." }] }`）。
+> 两种审查 Agent 可并发启动。产出均为 `specline/changes/<name>/.tmp/code-review.json`（`{ "findings": [{ "severity": "error"|"warning", "type": "unit_test_quality"|"style"|"security"|"logic", "file": "...", "covers": "Requirement: xxx", "message": "..." }] }`）。
 
 #### Step 10: Lint Gate
 
@@ -568,13 +708,46 @@ jq '.phases.coding.gates.build_gate.passed = null' "$STATE_FILE" > tmp && mv tmp
 
 ### 测试失败处理
 
-⚠️ 任何测试失败 → specline-test-runner 分析原因：
-- **测试代码问题** → specline-test-writer 自修（最多 2 次）
-- **实现代码问题** → 利用 `Covers` 追溯链定位到具体任务，只回对应 coding agent 修复 → **使用影响范围算法精确重置受影响任务的 Gate**
-- **`spec_ambiguity`**（Spec 模糊）→ **不自动循环修复**，暂停流水线并展示模糊点给用户，等待用户澄清 Spec 后继续
+⚠️ 测试失败根据失败文件所在的目录区分处理路径：
+
+#### 单元测试失败处理
+
+失败文件在 `tests/unit/` 或 `tests/models/` 目录下：
+
+- 利用 `Covers` 追溯链定位到具体 coding 任务
+- 回对应 coding agent 修复实现代码或测试代码（最多 2 次循环）
+- `spec_ambiguity`（Spec 模糊）→ **不自动循环修复**，暂停流水线并展示模糊点给用户
+
+Gate 重置（仅重置 test_unit_gate）：
+
+```bash
+jq '.phases.test.sub_phases.unit.gates.test_unit_gate.passed = null' "$STATE_FILE" > tmp && mv tmp "$STATE_FILE"
+```
+
+#### 集成/E2E 测试失败处理
+
+失败文件在 `tests/integration/` 或 `tests/e2e/` 目录下：
+
+- specline-test-runner 分析原因：
+  - **测试代码问题** → specline-test-writer 自修（最多 2 次）
+  - **实现代码问题** → 利用 `Covers` 追溯链定位到具体任务，回对应 coding agent 修复 → **使用影响范围算法精确重置受影响任务的 Gate**
+  - **`spec_ambiguity`**（Spec 模糊）→ **不自动循环修复**，暂停流水线并展示模糊点给用户
 - 循环最多 2 次
 
-代码修复后 Gate 重置：
+Gate 重置：
+
+```bash
+jq '
+  .phases.test.sub_phases.integration.gates.test_integration_gate.passed = null |
+  .phases.test.sub_phases.e2e.gates.test_e2e_gate.passed = null
+' "$STATE_FILE" > tmp && mv tmp "$STATE_FILE"
+```
+
+#### 优先级规则
+
+当单元测试和集成/E2E 测试同时失败时：**优先修复单元测试**（先执行 coding agent 修复循环），单元测试通过后再处理集成/E2E 测试失败。
+
+代码修复后 Gate 全部重置（所有测试类型）：
 
 ```bash
 jq '

@@ -65,6 +65,7 @@ specline-pipeline-gate.sh new --change "<name>"
   - **Type**: frontend | backend | infra | db | config | docs
   - **Depends**: (none) | 依赖的任务编号
   - **Covers**: Requirement: xxx, Scenario: xxx
+  - **Testable**: true | false
   - **Files**: 任务涉及的文件路径列表
 
   任务拆分原则：
@@ -100,8 +101,9 @@ specline-pipeline-gate.sh artifacts --change "<name>" --json
 ## 1. 数据模型 [x]
 - Type: backend
 - Depends: (none)
-- Files: server/models/user.py
 - Covers: Requirement: 用户数据模型
+- Testable: true
+- Files: server/models/user.py
 ```
 
 > 任务粒度适中，Files 范围明确，Covers 可追溯到具体 Requirement。
@@ -126,6 +128,7 @@ specline-pipeline-gate.sh artifacts --change "<name>" --json
 | 独立可测 | 每个任务可独立验证完成状态 |
 | 文件不交叠 | 第 1 批次（Depends: none）任务的文件集合无交集 |
 | 可追溯 | 每个任务必须通过 Covers 追溯到具体 Requirement/Scenario |
+| Testable 标注 | 无依赖 + 有可测代码 + 非 config/docs → Testable: true |
 
 ---
 

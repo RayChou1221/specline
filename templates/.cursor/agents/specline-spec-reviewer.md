@@ -49,6 +49,7 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
    - 每个任务含 `Depends:` 标注
    - 每个任务含 `Covers:` 标注（链接到具体的 Requirement 和 Scenario）
    - 每个任务含 `Files:` 标注（非空，列出预期文件）
+   - 每个任务含 `Testable:` 标注（值在 true/false 范围内，可选但建议标注）
 
 2. **独立性**：
    - `Depends: (none)` 的任务占比 ≥ 50%（否则标记为 warning）
@@ -62,6 +63,12 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
    - frontend 类型的任务应涉及 UI/样式/交互
    - backend 类型的任务应涉及 API/模型/逻辑
    - 没有 fullstack 类型（前端和后端必须拆开）
+
+5. **Testable 合理性**：
+   - `Testable: true` 的任务必须满足：Depends: (none) + Type ≠ config/docs + 有可拆分的独立逻辑单元
+   - `Testable: false` 的任务如果同时满足 Depends: (none) + Type ≠ config/docs + 有独立逻辑单元 → warning（建议标记为 Testable: true）
+   - 有上游依赖的任务 Testable 必须为 false
+   - Type 为 config/docs 的任务 Testable 必须为 false
 
 ## 输出格式
 
@@ -81,6 +88,7 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
     "total": 6,
     "independent": 4,
     "parallel_ratio": 0.67,
+    "testable_count": 3,
     "types": { "frontend": 2, "backend": 3, "config": 1 }
   },
   "design_review": {
@@ -98,11 +106,13 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
     "[spec.md] 缺少异常路径场景：未定义 'worker 数量为 0' 时的行为",
     "[tasks.md] 任务 3 缺少 Covers 标注",
     "[tasks.md] 任务 1 和 任务 2 的 Files 有交集：都包含了 src/utils/api.ts",
+    "[tasks.md] 任务 3 Testable=true 但存在上游依赖 (Depends: 1)，应为 false",
+    "[tasks.md] 任务 5 (Depends: none, Type: backend) 建议标记为 Testable: true",
     "[design.md] 提到使用 Redis 缓存，但 tasks.md 中没有对应的 infra 任务",
     "[coverage] Scenario '用户登出' 未被任何任务覆盖"
   ],
   "coverage": { "requirements_covered": 4, "requirements_total": 5, "scenarios_covered": 10, "scenarios_total": 14 },
-  "task_stats": { "total": 6, "independent": 4, "parallel_ratio": 0.67, "types": { "frontend": 2, "backend": 3, "config": 1 } },
+  "task_stats": { "total": 6, "independent": 4, "parallel_ratio": 0.67, "testable_count": 3, "types": { "frontend": 2, "backend": 3, "config": 1 } },
   "design_review": { "issues": ["Redis 缓存方案缺少对应的 infra 任务"] }
 }
 ```
