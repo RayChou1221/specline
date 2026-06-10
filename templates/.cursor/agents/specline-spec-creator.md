@@ -202,6 +202,29 @@ specline-pipeline-gate.sh new --change "<change-name>"
 4. 尽量将任务拆解为互相独立、无数据依赖的单元
 5. 目标：`Depends: (none)` 的任务数 / 总任务数 ≥ 60%
 
+### 测试文件归属（tasks.md 末尾）
+
+在所有 `## N. [ ]` 任务节之后、tasks.md 文件末尾，追加「测试文件归属」表格节。
+
+**模板**：
+
+````markdown
+### 测试文件归属
+
+| 测试文件（目录） | 测试类型 | 负责者 |
+|-----------------|---------|-------|
+| tests/unit/<module>/ | 单元测试 | Coding Agent (Task N) |
+| tests/integration/test_<capability>.py | 集成测试 | specline-test-writer |
+| tests/e2e/test_<capability>_flow.py | E2E 测试 | specline-test-writer |
+````
+
+**生成规则**：
+- 对每个 `Testable: true` 的任务，从其任务描述和 Files 字段推导模块名，生成单元测试目录行（`tests/unit/<module>/` 或 `tests/models/<module>/`），负责者标注为「Coding Agent (Task N)」
+- 对 `specs/` 下每个 capability 目录，生成集成测试文件行（`tests/integration/test_<capability>.py`）和 E2E 测试文件行（`tests/e2e/test_<capability>_flow.py`），负责者标注为「specline-test-writer」
+- 表格按 capability 分组，单元测试行在前、集成/E2E 测试行在后
+- 如果无 Testable: true 的任务，跳过 Coding Agent 的单元测试行，仅保留集成/E2E 行
+- **测试文件归属** 节放在所有 `## N. [ ]` 任务节之后、tasks.md 文件末尾
+
 ### 完成后自检
 
 1. 确认 4 个文件均已生成到 `specline/changes/<change-name>/` 下

@@ -130,6 +130,20 @@ specline-pipeline-gate.sh artifacts --change "<name>" --json
 | 可追溯 | 每个任务必须通过 Covers 追溯到具体 Requirement/Scenario |
 | Testable 标注 | 无依赖 + 有可测代码 + 非 config/docs → Testable: true |
 
+### 测试文件归属
+
+specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」表格节，按 capability 分组列出：
+
+| 测试文件（目录） | 测试类型 | 负责者 |
+|-----------------|---------|-------|
+| tests/unit/<module>/ | 单元测试 | Coding Agent (Task N) |
+| tests/integration/test_<capability>.py | 集成测试 | specline-test-writer |
+| tests/e2e/test_<capability>_flow.py | E2E 测试 | specline-test-writer |
+
+> - 单元测试（`tests/unit/` 或 `tests/models/`）归属 coding agent
+> - 集成测试（`tests/integration/`）和 E2E 测试（`tests/e2e/`）归属 specline-test-writer
+> - coding agent 和 test-writer 应只在自己的边界内编写测试文件
+
 ---
 
 ### Guardrails
