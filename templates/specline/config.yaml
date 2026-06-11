@@ -1,5 +1,7 @@
 schema: spec-driven
 
+# Specline 项目配置 (config-schema-v1)
+#
 # Project context (optional)
 # This is shown to AI when creating artifacts.
 # Add your tech stack, conventions, style guides, domain knowledge, etc.
@@ -51,3 +53,12 @@ schema: spec-driven
 #
 # Supported languages: go, python, typescript, javascript, rust, java, kotlin
 # All fields under modules[] are optional except 'path' and 'language'
+
+# Pipeline configuration (optional)
+# Control the human gate policy for the pipeline.
+# - full:    All 3 human gates are active (default, current behavior)
+# - minimal: Only the archive confirmation (HG3) requires human approval;
+#            HG1 (SPEC confirm) and HG2 (code review check) are auto-approved
+# - none:    All human gates are auto-approved (use with caution, primarily for CI/CD)
+pipeline:
+  human_gate_policy: full

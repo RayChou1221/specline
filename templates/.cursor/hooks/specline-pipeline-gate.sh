@@ -6,7 +6,7 @@
 #   specline-pipeline-gate.sh <phase> --change <change-name>
 #
 # Phases:
-#   new | list | artifacts | spec | build | lint | test-unit | test-integration | test-e2e | archive | status
+#   new | list | artifacts | spec | semantic | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status
 #
 # Exit codes:
 #   0 = 通过
@@ -734,20 +734,10 @@ gate_spec() {
   # 9. 检查每个任务标注完整性
   local task_count type_count deps_count covers_count files_count
   task_count=$(grep -c '^## ' "$tasks_file" || echo "0")
-  task_count="${task_count%%[^0-9]*}"
-  task_count="${task_count:-0}"
   type_count=$(grep -c '\*\*Type\*\*:' "$tasks_file" || echo "0")
-  type_count="${type_count%%[^0-9]*}"
-  type_count="${type_count:-0}"
   deps_count=$(grep -c '\*\*Depends\*\*:' "$tasks_file" || echo "0")
-  deps_count="${deps_count%%[^0-9]*}"
-  deps_count="${deps_count:-0}"
   covers_count=$(grep -c '\*\*Covers\*\*:' "$tasks_file" || echo "0")
-  covers_count="${covers_count%%[^0-9]*}"
-  covers_count="${covers_count:-0}"
   files_count=$(grep -c '\*\*Files\*\*:' "$tasks_file" || echo "0")
-  files_count="${files_count%%[^0-9]*}"
-  files_count="${files_count:-0}"
 
   if [ "$type_count" -lt "$task_count" ] || [ "$deps_count" -lt "$task_count" ] || \
      [ "$covers_count" -lt "$task_count" ] || [ "$files_count" -lt "$task_count" ]; then
@@ -758,8 +748,6 @@ gate_spec() {
   # 10. Testable 字段校验
   local testable_count
   testable_count=$(grep -c '\*\*Testable\*\*:' "$tasks_file" || echo "0")
-  testable_count="${testable_count%%[^0-9]*}"
-  testable_count="${testable_count:-0}"
 
   if [ "$testable_count" -eq 0 ]; then
     echo "⚠️  Testable 标注缺失（向后兼容模式：缺失字段的任务将被视为 Testable: false）"
@@ -839,8 +827,6 @@ gate_build() {
   if [ -f "$tasks_file" ]; then
     local testable_true_count
     testable_true_count=$(grep -c '\*\*Testable\*\*:.*true' "$tasks_file" || echo "0")
-    testable_true_count="${testable_true_count%%[^0-9]*}"
-    testable_true_count="${testable_true_count:-0}"
 
     if [ "$testable_true_count" -gt 0 ]; then
       echo "正在检查 $testable_true_count 个 Testable=true 任务的单元测试文件..."
@@ -863,19 +849,15 @@ gate_build() {
 
         case "$file_path" in
           *.py)
-            if command -v python3 &>/dev/null; then
-              if ! python3 -m py_compile "$PROJECT_ROOT/$file_path" 2>&1; then
-                syntax_errors="${syntax_errors}
+            if ! python3 -m py_compile "$PROJECT_ROOT/$file_path" 2>&1; then
+              syntax_errors="${syntax_errors}
   任务 $task_id: $file_path (Python 语法错误)"
-              fi
             fi
             ;;
           *.ts|*.tsx)
-            if command -v npx &>/dev/null; then
-              if ! npx tsc --noEmit "$PROJECT_ROOT/$file_path" 2>&1; then
-                syntax_errors="${syntax_errors}
+            if ! npx tsc --noEmit "$PROJECT_ROOT/$file_path" 2>&1; then
+              syntax_errors="${syntax_errors}
   任务 $task_id: $file_path (TypeScript 语法错误)"
-              fi
             fi
             ;;
         esac
@@ -952,8 +934,6 @@ gate_lint() {
   if [ -f "$review_file" ]; then
     local error_count
     error_count=$(jq '[.findings[] | select(.severity=="error")] | length' "$review_file" 2>/dev/null || echo "0")
-    error_count="${error_count%%[^0-9]*}"
-    error_count="${error_count:-0}"
     if [ "$error_count" -gt 0 ]; then
       fail "code-review.json 中发现 $error_count 个 error，必须修复"
     fi
@@ -1332,6 +1312,89 @@ gate_bind() {
   echo "✅ 已绑定 session '$session_id' → pipeline '$target_change'"
 }
 
+# ===== Semantic Gate — 跨文件语义检查 =====
+gate_semantic() {
+  if [ -z "$CHANGE" ]; then
+    fail "需要 --change <name>"
+  fi
+
+  # 定位 spec.md 和 tasks.md
+  local spec_file tasks_file
+  spec_file=$(find_spec_file)
+  tasks_file="$PROJECT_ROOT/specline/changes/$CHANGE/tasks.md"
+
+  if [ ! -f "$spec_file" ] || [ ! -f "$tasks_file" ]; then
+    fail "spec.md 或 tasks.md 不存在，无法执行语义检查"
+  fi
+
+  local checks_dir="$SCRIPT_DIR/specline-pipeline-gate-checks"
+  local common_sh="$checks_dir/common.sh"
+
+  if [ ! -f "$common_sh" ]; then
+    fail "common.sh 不存在: $common_sh"
+  fi
+
+  # source common.sh 初始化计数器
+  source "$common_sh"
+
+  # 设定文件路径环境变量，供各检查脚本使用
+  export SPEC_FILE="$spec_file"
+  export TASKS_FILE="$tasks_file"
+
+  # 依次执行 6 项语义检查
+  local check_scripts=(
+    "a1-covers-ref.sh"
+    "d1-cycle.sh"
+    "c1-exception.sh"
+    "c2-vague.sh"
+    "a2-a3-reverse.sh"
+    "d3-type-file.sh"
+  )
+
+  local check_functions=(
+    "run_a1_covers_ref"
+    "run_d1_cycle"
+    "run_c1_exception"
+    "run_c2_vague"
+    "run_a2_a3_reverse"
+    "run_d3_type_file"
+  )
+
+  local i=0
+  for script in "${check_scripts[@]}"; do
+    local script_path="$checks_dir/$script"
+    if [ -f "$script_path" ]; then
+      source "$script_path"
+      if declare -f "${check_functions[$i]}" > /dev/null 2>&1; then
+        "${check_functions[$i]}"
+      fi
+    else
+      echo "⚠️  检查脚本不存在，跳过: $script"
+    fi
+    i=$((i + 1))
+  done
+
+  # 汇总结果
+  local total_issues=$((SEMANTIC_ERRORS + SEMANTIC_WARNINGS + SEMANTIC_INFOS))
+
+  echo ""
+  echo "========== Semantic Gate 汇总 =========="
+  echo "  ❌ 错误:   $SEMANTIC_ERRORS"
+  echo "  ⚠️  警告:  $SEMANTIC_WARNINGS"
+  echo "  ℹ️  信息:  $SEMANTIC_INFOS"
+  echo "  总计:      $total_issues"
+  echo "========================================="
+
+  if [ "$SEMANTIC_ERRORS" -gt 0 ]; then
+    echo ""
+    echo "❌ Semantic Gate 未通过：发现 $SEMANTIC_ERRORS 个错误"
+    exit 1
+  fi
+
+  write_gate_passed "phases.spec.gates.semantic_gate"
+  pass "✅ Semantic Gate 全部通过"
+}
+
 # ===== 分派 =====
 
 case "$PHASE" in
@@ -1346,6 +1409,9 @@ case "$PHASE" in
     ;;
   spec)
     gate_spec
+    ;;
+  semantic)
+    gate_semantic "$@"
     ;;
   build)
     gate_build
@@ -1377,7 +1443,7 @@ case "$PHASE" in
     ;;
   *)
     echo "未知 phase: $PHASE"
-    echo "可用: new | list | artifacts | spec | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status"
+    echo "可用: new | list | artifacts | spec | semantic | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status"
     exit 2
     ;;
 esac

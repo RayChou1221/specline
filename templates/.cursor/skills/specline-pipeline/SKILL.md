@@ -71,6 +71,20 @@ description: >-
     🟡 = Human Gate（人工确认检查点）
 ```
 
+### 人机门禁策略
+
+流水线有 3 个人工确认点：HG1（SPEC 确认）、HG2（Review 条件复核）、HG3（归档确认）。通过 `specline/config.yaml` 中的 `pipeline.human_gate_policy` 控制哪些 HG 需要人工确认：
+
+| 策略 | HG1 (SPEC确认) | HG2 (Review复核) | HG3 (归档确认) |
+|------|:-------------:|:----------------:|:-------------:|
+| `full`（默认） | 人工确认 | 条件人工复核 | 人工确认 |
+| `minimal` | 自动通过 | 自动通过 | 人工确认 |
+| `none` | 自动通过 | 自动通过 | 自动通过 |
+
+**读取方式**：在每个 HG 触发前读取 `specline/config.yaml` 的 `pipeline.human_gate_policy` 字段（通过 grep/yq），若策略指示跳过当前 HG，则直接写入 `.pipeline-state.json` 中对应 `human_gate_N.passed = true`，不调用 `AskUserQuestion`。
+
+**子 Agent 确认行为**：当策略为 `minimal` 或 `none` 时，编排者应在派发子 Agent 时传递 `HUMAN_GATE_POLICY=<policy>` 上下文，告知子 Agent 跳过所有 `AskUserQuestion` 交互（如 spec_ambiguity 暂停、skill 级确认等），直接采用默认安全选项继续执行。编排者自身在测试失败处理中的 spec_ambiguity 暂停也应改为记录 WARNING 事件日志后继续。
+
 ### 入口模式
 
 1. **新建流水线**: `/specline-pipeline <自然语言需求>`
@@ -119,50 +133,6 @@ specline-pipeline-gate.sh new --change "<kebab-case-name>"
 
 > 📋 完整 JSON Schema 见 [附录 A](#附录-a-pipeline-statejson-完整-schema)
 
-#### Step 1b: 项目语言检测（spec-creator 上下文准备）
-
-在启动 spec-creator 前，执行项目语言检测以获取技术栈信息：
-
-```bash
-# 检测项目中的语言标记文件
-MODULES_JSON=$(.cursor/hooks/specline-pipeline-gate.sh detect-modules 2>/dev/null || echo '[]')
-```
-
-如果 Gate 脚本尚未支持 `detect-modules` 子命令，编排者可通过以下 shell 命令手动检测：
-
-```bash
-# 手动检测（fallback）
-MODULES=""
-if find "$PROJECT_ROOT" -maxdepth 2 -name "go.mod" -not -path "*/vendor/*" | grep -q .; then
-  MODULES="$MODULES go"
-fi
-if find "$PROJECT_ROOT" -maxdepth 2 -name "package.json" -not -path "*/node_modules/*" | grep -q .; then
-  MODULES="$MODULES javascript/typescript"
-fi
-if find "$PROJECT_ROOT" -maxdepth 2 -name "Cargo.toml" | grep -q .; then
-  MODULES="$MODULES rust"
-fi
-if find "$PROJECT_ROOT" -maxdepth 2 -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" | grep -q .; then
-  MODULES="$MODULES java"
-fi
-if find "$PROJECT_ROOT" -maxdepth 2 -name "pyproject.toml" -o -name "setup.py" -o -name "requirements.txt" | grep -q .; then
-  MODULES="$MODULES python"
-fi
-# 也可读取 specline/config.yaml 的 project.modules 覆盖自动检测结果
-```
-
-将检测结果格式化为语言上下文文本，注入到 spec-creator 和后续 coding agent 的 prompt 中：
-
-```
-## 项目技术栈（自动检测）
-- 语言: Go
-- 布局: monorepo (backend/ + frontend/)
-- Go 测试约定: 测试文件与源码同目录，命名 *_test.go
-- Go 测试命令: go test ./...
-```
-
-> 编排者应将上述上下文保存在会话变量中（如 `LANGUAGE_CONTEXT`），供 Step 2 和 Step 7 的 prompt 模板引用。
-
 #### Step 2: 启动 specline-spec-creator
 
 specline-spec-creator 子 Agent 的职责是根据内联模板直接生成全部规划文件：
@@ -172,8 +142,6 @@ specline-spec-creator 子 Agent 的职责是根据内联模板直接生成全部
 - `specs/<capability>/spec.md` — 功能规格（Requirements/Scenarios）
 
 使用 Task 工具，subagent_type="specline-spec-creator"，描述中传入 change name 和自然语言需求，让 specline-spec-creator 根据内联模板直接生成。
-
-> **注意**：启动 spec-creator 时，prompt 中应包含 Step 1b 检测到的项目语言上下文。这使 speccline-spec-creator 能正确生成语言适配的测试文件归属表。
 
 > **任务标注规范**：tasks.md 每个任务必须包含：
 > - `Type`: frontend | backend | infra | db | config | docs
@@ -218,6 +186,8 @@ specline-spec-reviewer 审核三份文件：
 exit code 0 = 通过，写入 passed。exit code != 0 = 失败，读取 stderr 展示给用户。
 
 #### Step 5: 人工确认 (Human Gate 1) 🟡
+
+> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_1.passed = true`，进入 Phase 2。
 
 Spec Gate 通过后，使用 `AskUserQuestion` 工具请求确认。展示内容包括：需求提案摘要、功能需求列表、任务拆解概览（含并行组）。
 
@@ -372,7 +342,7 @@ jq --argjson tasks '[
 
 #### Step 7: 按批次并发派发 Coding Agent
 
-对每个批次依次处理。派发前，将 Step 1b 格式化的语言上下文赋值给 `languageContext` 变量（来自 `LANGUAGE_CONTEXT`），注入到各 coding agent 的 prompt 中。
+对每个批次依次处理：
 
 **7a. 同一批次内所有任务并发派发**，根据 Type 选择对应的 agent：
 
@@ -404,10 +374,6 @@ for (const task of currentBatchTasks) {
     // === TDD prompt（Testable: true） ===
     prompt = `
 你收到一个编码任务（Type: ${task.type}, Testable: true），请按 TDD（测试驱动开发）方式实现本任务范围内的代码。
-
-${languageContext || ''}
-
-> **注意**：如果 Step 1b 检测到项目语言信息，编排者应将其注入到每个 coding agent 的 prompt 中，使其了解项目的测试约定和目录结构。
 
 ## 上下文文件（只读参考）
 - Spec: specline/changes/${changeName}/specs/${capability}/spec.md
@@ -472,10 +438,6 @@ ${task.content}
     // === 标准编码 prompt（Testable: false，有代码逻辑） ===
     prompt = `
 你收到一个编码任务（Type: ${task.type}, Testable: false），请只实现本任务范围内的代码。
-
-${languageContext || ''}
-
-> **注意**：如果 Step 1b 检测到项目语言信息，编排者应将其注入到每个 coding agent 的 prompt 中，使其了解项目的测试约定和目录结构。
 
 ## 上下文文件（只读参考）
 - Spec: specline/changes/${changeName}/specs/${capability}/spec.md
@@ -635,6 +597,8 @@ code-review.json 中 unit test 相关的 finding 标注 `type` 为 `"unit_test_q
 
 #### Step 11: 可选人工复核 (Human Gate 2) 🟡
 
+> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_2.passed = true`，进入 Phase 4。
+
 仅当 code-review.json 中 warnings > 0 且 errors = 0 时，使用 `AskUserQuestion`：
 
 ```javascript
@@ -690,6 +654,8 @@ exit code 全 0 = 通过，进入 Phase 5。失败处理见 [Layer 3: 测试失�
 ### Phase 5: ARCHIVE
 
 #### Step 14: 归档确认 (Human Gate 3) 🟡
+
+> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `none` → 跳过此 HG，直接写入 `human_gate_3.passed = true`，执行归档。`minimal` 策略下 HG3 保留人工确认。
 
 全部测试通过后，使用 `AskUserQuestion` 请求归档确认：
 
@@ -772,6 +738,8 @@ jq '.phases.coding.gates.build_gate.passed = null' "$STATE_FILE" > tmp && mv tmp
 - 回对应 coding agent 修复实现代码或测试代码（最多 2 次循环）
 - `spec_ambiguity`（Spec 模糊）→ **不自动循环修复**，暂停流水线并展示模糊点给用户
 
+  > **策略判断**：若 `pipeline.human_gate_policy` 为 `minimal` 或 `none` → 不暂停，将 spec_ambiguity 降级为 WARNING 记录到事件日志并继续下一阶段。
+
 Gate 重置（仅重置 test_unit_gate）：
 
 ```bash
@@ -786,6 +754,8 @@ jq '.phases.test.sub_phases.unit.gates.test_unit_gate.passed = null' "$STATE_FIL
   - **测试代码问题** → specline-test-writer 自修（最多 2 次）
   - **实现代码问题** → 利用 `Covers` 追溯链定位到具体任务，回对应 coding agent 修复 → **使用影响范围算法精确重置受影响任务的 Gate**
   - **`spec_ambiguity`**（Spec 模糊）→ **不自动循环修复**，暂停流水线并展示模糊点给用户
+
+  > **策略判断**：若 `pipeline.human_gate_policy` 为 `minimal` 或 `none` → 不暂停，将 spec_ambiguity 降级为 WARNING 记录到事件日志并继续下一阶段。
 - 循环最多 2 次
 
 Gate 重置：
@@ -1083,7 +1053,7 @@ postToolUse    → specline-reminder.sh
 | 1 | **不做判断，只做编排** | 不评估代码质量、需求好坏、测试覆盖——这些由子 Agent 和 Gate 脚本负责 |
 | 2 | **所有门禁通过 Gate 脚本** | 调用 `specline-pipeline-gate.sh`，不要自己写 grep/检查逻辑 |
 | 3 | **状态文件是唯一真相源** | 所有决策基于 `.pipeline-state.json` 的当前值 |
-| 4 | **人工确认点必须暂停** | 不要自动跳过 human_gate |
+| 4 | **人工确认点必须尊重策略** | 根据 `pipeline.human_gate_policy` 配置决定是否暂停，不要无条件跳过或强制暂停 human_gate |
 | 5 | **测试 Agent 必须黑盒** | 不给 specline-test-writer 传递源代码文件路径 |
 | 6 | **Hook 阻断绝不静默降级** | 子 Agent 被 hook 阻止时，必须先诊断、沟通、修复后重试 |
 | 7 | **接受 Hook 约束** | preToolUse/postToolUse/sessionStart Hook 会自动校验和提醒，不要试图绕过 |

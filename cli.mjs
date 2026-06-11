@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, mkdirSync, readdirSync, copyFileSync, writeFileSync, readFileSync } from 'fs';
-import { join, dirname, resolve, relative } from 'path';
+import { join, dirname, resolve, relative, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { get } from 'https';
@@ -191,6 +191,149 @@ function copyDirRecursive(src, dest) {
       copyFileSync(srcPath, destPath);
     }
   }
+}
+
+// ============================================================
+// 智能合并函数 — hooks.json / config.yaml / CONFLICT 备份
+// ============================================================
+
+/**
+ * hooks.json 语义合并：清理所有 specline-* 条目，注入模板最新官方 hook
+ */
+function mergeHooksJson(existingContent, templateContent) {
+  let existingObj, templateObj;
+  try {
+    existingObj = JSON.parse(existingContent);
+  } catch {
+    warn('hooks.json 解析失败，将使用模板完整替换');
+    return templateContent;
+  }
+  try {
+    templateObj = JSON.parse(templateContent);
+  } catch {
+    warn('模板 hooks.json 解析失败，保留现有文件');
+    return existingContent;
+  }
+
+  for (const eventName of Object.keys(templateObj.hooks || {})) {
+    if (!existingObj.hooks) {
+      existingObj.hooks = {};
+    }
+    if (!existingObj.hooks[eventName]) {
+      existingObj.hooks[eventName] = [];
+    }
+    existingObj.hooks[eventName] = existingObj.hooks[eventName].filter(
+      (entry) => !(entry.command || '').includes('specline-')
+    );
+    existingObj.hooks[eventName] = [
+      ...templateObj.hooks[eventName],
+      ...existingObj.hooks[eventName],
+    ];
+  }
+  return JSON.stringify(existingObj, null, 2) + '\n';
+}
+
+function countCustomHooks(hooksObj) {
+  let count = 0;
+  for (const eventName of Object.keys(hooksObj.hooks || {})) {
+    for (const entry of (hooksObj.hooks[eventName] || [])) {
+      if (!(entry.command || '').includes('specline-')) count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * YAML 段落结构
+ */
+function parseYamlSections(content) {
+  const lines = content.split('\n');
+  const sections = [];
+  let currentComments = [];
+  let currentKey = null;
+  let currentBodyLines = [];
+  let inBody = false;
+
+  function flushSection() {
+    if (currentComments.length > 0 || currentBodyLines.length > 0 || currentKey) {
+      const bodyStr = currentBodyLines.join('\n');
+      // 判定 isEmpty：body 为空、纯注释、或仅声明 key 但无实际值
+      const bodyTrimmed = bodyStr.trim();
+      const onlyKeyDeclaration = currentKey !== null &&
+        currentBodyLines.length === 1 &&
+        bodyTrimmed.match(/^\w[\w_-]*\s*:\s*$/) !== null;
+      const isEmpty = bodyTrimmed === '' ||
+        bodyTrimmed.startsWith('#') ||
+        onlyKeyDeclaration;
+      sections.push({ key: currentKey, headerComments: [...currentComments], body: bodyStr, isEmpty });
+    }
+    currentComments = [];
+    currentKey = null;
+    currentBodyLines = [];
+    inBody = false;
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '') { if (inBody) currentBodyLines.push(line); continue; }
+    if (trimmed.startsWith('#')) { if (inBody) currentBodyLines.push(line); else currentComments.push(line); continue; }
+    const topKeyMatch = line.match(/^(\w[\w_-]*)\s*:(.*)/);
+    if (topKeyMatch && !line.startsWith(' ') && !line.startsWith('\t')) {
+      flushSection();
+      currentKey = topKeyMatch[1];
+      currentBodyLines = [line];
+      inBody = true;
+      continue;
+    }
+    if (inBody) currentBodyLines.push(line);
+  }
+  flushSection();
+  return sections;
+}
+
+function findSection(sections, key) {
+  return sections.find((s) => s.key === key) || null;
+}
+
+function mergeConfigYaml(existingContent, templateContent) {
+  const existingSections = parseYamlSections(existingContent);
+  const templateSections = parseYamlSections(templateContent);
+  const resultLines = [];
+
+  for (const tmplSec of templateSections) {
+    const existSec = findSection(existingSections, tmplSec.key);
+    if (existSec) {
+      if (!existSec.isEmpty && existSec.body.trim() !== tmplSec.body.trim()) {
+        resultLines.push(...tmplSec.headerComments);
+        resultLines.push(existSec.body);
+      } else {
+        resultLines.push(...tmplSec.headerComments);
+        resultLines.push(tmplSec.body);
+      }
+      resultLines.push('');
+    } else if (tmplSec.key !== null) {
+      resultLines.push('# 🆕 新增配置段 (specline sync)');
+      resultLines.push(...tmplSec.headerComments);
+      resultLines.push(tmplSec.body);
+      resultLines.push('');
+    }
+  }
+
+  for (const existSec of existingSections) {
+    if (existSec.key === null) continue;
+    if (!findSection(templateSections, existSec.key)) {
+      resultLines.push(...existSec.headerComments);
+      resultLines.push(existSec.body);
+      resultLines.push('');
+    }
+  }
+  return resultLines.join('\n');
+}
+
+function backupBeforeOverwrite(destPath) {
+  const backupPath = destPath + '.orig';
+  copyFileSync(destPath, backupPath);
+  return backupPath;
 }
 
 function cmd_init(targetPath) {
@@ -430,9 +573,52 @@ function cmd_sync({ dryRun, targetPath }) {
 
   // 8. dryRun 模式只预览
   if (dryRun) {
+    const HOOKS_JSON = '.cursor/hooks.json';
+    const CONFIG_YAML = 'specline/config.yaml';
+    let hooksPlan = null;
+
     for (const r of results) {
-      if (r.type === 'UNCHANGED' || r.type === 'MODIFIED_ONLY') continue;
-      const labels = { NEW: '➕ 新增', WILL_UPDATE: '🔄 更新', CONFLICT: '⚠️  冲突', NO_LOCK_CONFLICT: '⚠️  无锁记录', UPSTREAM_REMOVED: '🗑️  上游移除' };
+      if (r.type === 'UNCHANGED' || r.type === 'MODIFIED_ONLY') {
+        if (r.path === HOOKS_JSON) {
+          const projPath = join(target, r.path);
+          if (existsSync(projPath)) {
+            try {
+              const existingObj = JSON.parse(readFileSync(projPath, 'utf-8'));
+              hooksPlan = { customCount: countCustomHooks(existingObj) };
+            } catch {}
+          }
+        }
+        if (r.path === CONFIG_YAML) {
+          log('💡 config.yaml: 用户已修改，保留现有配置不变');
+        }
+        continue;
+      }
+
+      if (r.path === HOOKS_JSON) {
+        hooksPlan = hooksPlan || { customCount: 0 };
+        // 读取用户现有 hooks.json，计算自定义 hook 数量
+        const projPath = join(target, r.path);
+        if (existsSync(projPath) && !hooksPlan.readFromUser) {
+          try {
+            const existingObj = JSON.parse(readFileSync(projPath, 'utf-8'));
+            hooksPlan = { customCount: countCustomHooks(existingObj), readFromUser: true };
+          } catch {}
+        }
+        let tplCount = 0;
+        try {
+          const tpl = JSON.parse(readFileSync(join(TEMPLATES_DIR, r.path), 'utf-8'));
+          for (const ev of Object.keys(tpl.hooks || {})) tplCount += (tpl.hooks[ev] || []).length;
+        } catch {}
+        log(`🔄 hooks.json 语义合并: 保留 ${hooksPlan.customCount >= 0 ? hooksPlan.customCount : '?'} 个自定义 hook, 更新 ${tplCount} 个官方 hook`);
+        continue;
+      }
+
+      if (r.path === CONFIG_YAML) {
+        log('💡 config.yaml: 保留用户配置不变，更新文档注释');
+        continue;
+      }
+
+      const labels = { NEW: '➕ 新增', WILL_UPDATE: '🔄 更新', CONFLICT: '⚠️  冲突（将备份后覆盖）', NO_LOCK_CONFLICT: '⚠️  无锁记录', UPSTREAM_REMOVED: '🗑️  上游移除' };
       log(labels[r.type] + '  ' + r.path);
     }
     if (stats.newCount === 0 && stats.updated === 0 && stats.conflicted === 0 && stats.upstreamRemoved === 0) {
@@ -445,6 +631,9 @@ function cmd_sync({ dryRun, targetPath }) {
 
   // 9. 执行写入
   const newFiles = new Map();
+  const HOOKS_JSON = '.cursor/hooks.json';
+  const CONFIG_YAML = 'specline/config.yaml';
+  const mergeStats = { hooksMerged: false, configUpdated: false, backupsCreated: 0 };
 
   for (const r of results) {
     if (r.type === 'UNCHANGED' || r.type === 'MODIFIED_ONLY') {
@@ -460,7 +649,6 @@ function cmd_sync({ dryRun, targetPath }) {
       continue;
     }
 
-    // NEW/WILL_UPDATE/CONFLICT/NO_LOCK_CONFLICT: 复制模板文件
     const srcPath = join(TEMPLATES_DIR, r.path);
     const destPath = join(target, r.path);
     const destDir = dirname(destPath);
@@ -469,13 +657,50 @@ function cmd_sync({ dryRun, targetPath }) {
     }
 
     try {
-      copyFileSync(srcPath, destPath);
-      newFiles.set(r.path, computeFileHash(destPath));
+      // 特殊文件：hooks.json 语义合并
+      if (r.path === HOOKS_JSON) {
+        const existingContent = existsSync(destPath) ? readFileSync(destPath, 'utf-8') : '{}';
+        const templateContent = readFileSync(srcPath, 'utf-8');
+        try {
+          const merged = mergeHooksJson(existingContent, templateContent);
+          writeFileSync(destPath, merged, 'utf-8');
+          newFiles.set(r.path, sha256(merged));
+          mergeStats.hooksMerged = true;
+        } catch {
+          warn('hooks.json 合并失败，将保留现有文件');
+          newFiles.set(r.path, computeFileHash(destPath));
+        }
+        continue;
+      }
 
-      if (r.type === 'CONFLICT') {
-        warn('已覆盖（冲突）: ' + r.path);
-      } else if (r.type === 'NO_LOCK_CONFLICT') {
-        warn('已覆盖（无锁文件记录）: ' + r.path);
+      // 特殊文件：config.yaml 注释合并
+      if (r.path === CONFIG_YAML) {
+        const existingContent = existsSync(destPath) ? readFileSync(destPath, 'utf-8') : '';
+        const templateContent = readFileSync(srcPath, 'utf-8');
+        try {
+          const merged = mergeConfigYaml(existingContent, templateContent);
+          writeFileSync(destPath, merged, 'utf-8');
+          newFiles.set(r.path, sha256(merged));
+          mergeStats.configUpdated = true;
+        } catch {
+          warn('config.yaml 合并失败，将保留现有文件');
+          newFiles.set(r.path, computeFileHash(destPath));
+        }
+        continue;
+      }
+
+      // CONFLICT：备份后覆盖
+      if (r.type === 'CONFLICT' || r.type === 'NO_LOCK_CONFLICT') {
+        if (existsSync(destPath)) {
+          const backupPath = backupBeforeOverwrite(destPath);
+          mergeStats.backupsCreated++;
+          warn('已覆盖（冲突，备份: ' + basename(backupPath) + '）: ' + r.path);
+        }
+        copyFileSync(srcPath, destPath);
+        newFiles.set(r.path, computeFileHash(destPath));
+      } else {
+        copyFileSync(srcPath, destPath);
+        newFiles.set(r.path, computeFileHash(destPath));
       }
     } catch (err) {
       warn(r.path + ' 写入失败：' + err.message);
@@ -493,7 +718,8 @@ function cmd_sync({ dryRun, targetPath }) {
   });
 
   // 11. 输出摘要
-  if (stats.newCount === 0 && stats.updated === 0 && stats.conflicted === 0 && stats.upstreamRemoved === 0) {
+  if (stats.newCount === 0 && stats.updated === 0 && stats.conflicted === 0 && stats.upstreamRemoved === 0
+      && !mergeStats.hooksMerged && !mergeStats.configUpdated) {
     log('所有模板文件已是最新，无需同步');
   } else {
     log('📊 同步摘要：');
@@ -503,6 +729,9 @@ function cmd_sync({ dryRun, targetPath }) {
     log('   ⚠️  已覆盖（冲突）: ' + stats.conflicted);
     log('   ⏭️  已跳过（本地修改）: ' + stats.skippedModified);
     log('   🗑️  上游已移除: ' + stats.upstreamRemoved);
+    if (mergeStats.hooksMerged) log('   🔧 hooks.json: 语义合并完成');
+    if (mergeStats.configUpdated) log('   📝 config.yaml: 注释已更新');
+    if (mergeStats.backupsCreated > 0) log('   💾 创建备份: ' + mergeStats.backupsCreated + ' 个 .orig 文件');
     log('   ✨ 锁文件已更新至 v' + VERSION);
   }
 

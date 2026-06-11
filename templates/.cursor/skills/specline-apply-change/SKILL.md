@@ -19,6 +19,10 @@ Implement tasks from a Specline change.
 > **入口**：`/specline-apply-change [change-name]` 或直接说「继续实现」
 > **流程**：选 change → 读上下文 → 逐任务实现 → 标记完成
 
+> ⚠️ **人机门禁策略感知**：当调用方传递了 `HUMAN_GATE_POLICY=minimal` 或 `HUMAN_GATE_POLICY=none` 上下文时，本 Skill 内所有的 `AskUserQuestion` 交互应自动采用默认安全选项：
+> - change 选择 → 若上下文中已有 change name，直接使用；否则取第一个活跃 change
+> - 其他确认交互 → 自动采用默认安全选项继续，不暂停等待人工输入
+
 **Fluid Workflow Integration**
 
 This skill supports the "actions on a change" model:
