@@ -58,5 +58,7 @@ schema: spec-driven
 # - minimal: Only the archive confirmation (HG3) requires human approval;
 #            HG1 (SPEC confirm) and HG2 (code review check) are auto-approved
 # - none:    All human gates are auto-approved (use with caution, primarily for CI/CD)
+
 pipeline:
-  human_gate_policy: full
+  human_gate_policy: minimal
+
