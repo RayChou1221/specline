@@ -43,7 +43,7 @@
 - **确定性门禁**：每个阶段用 Shell 脚本的退出码判定是否通过，不做模糊判断
 - **黑盒测试**：测试 Agent 只看 Spec 文档，不能读取任何实现源码
 - **断点续跑**：随时中断，下次从最后一个可信门禁自动恢复（tasks.md 的 `[x]`/`[ ]` 标记进度）
-- **人机协作**：3 个人工检查点——Spec 确认、Review 可选复核、归档确认
+- **人机协作**：3 个人工检查点——Spec 确认、Review 可选复核、归档确认，支持 `full`/`minimal`/`none` 三级自动化策略配置（`specline/config.yaml` 中 `pipeline.human_gate_policy`）
 - **Hook 约束体系**：sessionStart 注入 pipeline 上下文 → preToolUse 违规拦截 → postToolUse 操作后提醒，确保长对话中 Agent 不偏离流水线逻辑
 - **安全 Hook**：自动拦截危险 Shell 命令（如 `rm -rf`、`curl|bash`）+ 代码变更后自动格式化
 - **零外部依赖**：不依赖 OpenSpec CLI，全部功能自包含
@@ -77,10 +77,14 @@ my-project/
 │   ├── agents/          ← 9 个 Specline Agent 定义
 │   ├── commands/        ← 3 个 Slash 命令入口
 │   ├── skills/          ← 6 个 Skill 指令
+│   │   └── specline-pipeline/
+│   │       ├── SKILL.md         ← 核心编排指令（~500 行）
+│   │       ├── templates/       ← 子 Agent prompt 模板
+│   │       └── references/      ← Schema / 事件日志 / 约束参考文档
 │   ├── hooks/           ← 7 个 Gate/Hook 脚本
 │   └── hooks.json       ← Cursor Hook 配置
 ├── specline/            ← 运行时目录
-│   ├── config.yaml
+│   ├── config.yaml      ← 项目配置（含 pipeline 人机门禁策略）
 │   ├── changes/         ← 变更目录
 │   │   └── archive/     ← 归档目录
 │   └── specs/           ← 主规格目录
@@ -132,8 +136,8 @@ PHASE 1: SPEC（规格）
     ├── design.md      — 技术设计（架构/数据流/决策）
     └── tasks.md       — 任务清单（Type/Depends/Covers/Testable/Files + [ ] 进度标记）
   → specline-spec-reviewer 审核
-  → Gate: grep + jq 格式校验
-  → 🟡 人工确认 Spec 和任务规划
+  → Gate: grep + jq 格式校验 + semantic 语义检查（Covers 引用悬空 / 依赖环路 / 异常场景缺失 / 模糊需求检测）
+  → 🟡 人工确认 Spec 和任务规划（策略可配：`full` 需确认 / `minimal` `none` 自动通过）
 
 PHASE 2: CODING（编码）
   解析 tasks.md → 按依赖 DAG 分层 → 同批次前后端/config Agent 并发
@@ -152,7 +156,7 @@ PHASE 4: TEST（测试）
   → 自动重试最多 2 次
 
 PHASE 5: ARCHIVE（归档）
-  → 🟡 人工确认归档
+  → 🟡 人工确认归档（策略可配：`full` `minimal` 需确认 / `none` 自动归档）
   → delta specs 合并到主规格目录
   → 按日期归档到 specline/changes/archive/
   ✅ 完成
@@ -205,6 +209,10 @@ PHASE 5: ARCHIVE（归档）
     ▼                                                  ▼
 specline-pipeline SKILL  ← 编排层                 编排者直接执行（无子 Agent）
     │                                               Read → Write → ReadLints → Shell → 归档
+    ├── SKILL.md           核心编排指令（~500 行）
+    ├── templates/         subagent-prompts.md（3 套 prompt 模板）
+    └── references/        Schema / 事件日志 / 约束参考文档
+    │
 ┌───┼──────────────────┬──────────────────────┐
 ▼   ▼                  ▼                      ▼
 9 个子 Agent      specline-pipeline-     Cursor Hooks
@@ -218,7 +226,7 @@ specline-pipeline SKILL  ← 编排层                 编排者直接执行（�
 |------|------|
 | `specline init [path]` | 在指定路径（默认当前目录）初始化 Specline 项目，复制模板文件并生成锁文件 |
 | `specline update` | 检查 CLI 是否有新版本可用（npm registry），输出更新提示 |
-| `specline sync [--dry-run] [path]` | 将上游最新模板文件同步到项目，基于 Lock File 智能识别安全更新/冲突/仅本地修改。`--dry-run` 预览变更不实际写入 |
+| `specline sync [--dry-run] [path]` | 将上游最新模板文件同步到项目，基于 Lock File 智能识别安全更新/冲突/仅本地修改。hooks.json 语义合并（保留用户自定义 hook）、config.yaml 注释级更新（保留用户配置值）、CONFLICT 覆盖前自动创建 `.orig` 备份。`--dry-run` 预览变更不实际写入 |
 | `specline --version` | 显示当前 CLI 版本号 |
 | `specline --help` | 显示帮助信息 |
 
@@ -242,7 +250,7 @@ specline-pipeline SKILL  ← 编排层                 编排者直接执行（�
 
 | 门禁 | 检查内容 |
 |------|---------|
-| Spec | `grep` 检查 Purpose/Requirements/Scenarios 章节完整性、WHEN/THEN 配对、Testable 字段格式与一致性 |
+| Spec | 结构性检查（`grep` 检查章节完整性、WHEN/THEN 配对、字段格式）+ 语义检查（`semantic` 子命令：Covers 引用悬空、依赖环路、异常场景缺失、模糊需求、反向覆盖、Type-文件一致性，分 ERROR/WARNING/INFO 三级严重度） |
 | Build | `tsc --noEmit` / `python -m compileall` 编译检查 + Testable 任务单元测试文件存在性与语法检查 |
 | Lint | `ruff` / `eslint` 退出码 + code-review.json 中 error 数量 |
 | Test | 测试框架退出码 + 覆盖率阈值 |
