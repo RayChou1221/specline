@@ -18,6 +18,7 @@ set -euo pipefail
 PHASE="${1:-}"
 CHANGE=""
 EXECUTE_ARCHIVE=""
+POSITIONAL_ARGS=()
 
 # 遍历所有参数，不依赖位置
 shift  # 跳过 PHASE
@@ -32,6 +33,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     *)
+      POSITIONAL_ARGS+=("$1")
       shift
       ;;
   esac
@@ -79,6 +81,425 @@ find_spec_file() {
     return
   fi
   find "$PROJECT_ROOT/specline/changes/$CHANGE/specs" -name "spec.md" 2>/dev/null | head -1
+}
+
+MODULES_JSON=""
+
+detect_project_modules() {
+  # 扫描 maxdepth 2 的语言标记文件，输出 JSON 数组
+  # 格式: [{"path":"backend/","language":"go"},{"path":"frontend/","language":"typescript"}]
+  # 排除: node_modules/, .git/, vendor/, dist/
+
+  local modules='[]'
+
+  while IFS= read -r marker; do
+    [ -z "$marker" ] && continue
+    local dir
+    dir=$(dirname "$marker")
+    local rel_dir="${dir#$PROJECT_ROOT/}"
+    [ "$rel_dir" = "$dir" ] && rel_dir="."
+    [ "$rel_dir" != "." ] && rel_dir="${rel_dir}/"
+
+    case "$(basename "$marker")" in
+      go.mod)
+        modules=$(echo "$modules" | jq --arg p "$rel_dir" '. + [{"path":$p,"language":"go"}]')
+        ;;
+      Cargo.toml)
+        modules=$(echo "$modules" | jq --arg p "$rel_dir" '. + [{"path":$p,"language":"rust"}]')
+        ;;
+      pyproject.toml|setup.cfg|requirements.txt)
+        local exists
+        exists=$(echo "$modules" | jq --arg p "$rel_dir" '[.[] | select(.path == $p and .language == "python")] | length')
+        if [ "$exists" = "0" ]; then
+          modules=$(echo "$modules" | jq --arg p "$rel_dir" '. + [{"path":$p,"language":"python"}]')
+        fi
+        ;;
+      package.json)
+        if ! grep -q '"workspaces"' "$marker" 2>/dev/null; then
+          local lang="javascript"
+          [ -f "${dir}/tsconfig.json" ] && lang="typescript"
+          modules=$(echo "$modules" | jq --arg p "$rel_dir" --arg l "$lang" '. + [{"path":$p,"language":$l}]')
+        fi
+        ;;
+      pom.xml)
+        modules=$(echo "$modules" | jq --arg p "$rel_dir" '. + [{"path":$p,"language":"java"}]')
+        ;;
+      build.gradle|build.gradle.kts)
+        local exists
+        exists=$(echo "$modules" | jq --arg p "$rel_dir" '[.[] | select(.path == $p)] | length')
+        if [ "$exists" = "0" ]; then
+          modules=$(echo "$modules" | jq --arg p "$rel_dir" '. + [{"path":$p,"language":"kotlin"}]')
+        fi
+        ;;
+    esac
+  done < <(find "$PROJECT_ROOT" -maxdepth 2 \
+    \( -name "go.mod" -o -name "package.json" -o -name "Cargo.toml" \
+       -o -name "pyproject.toml" -o -name "setup.cfg" -o -name "requirements.txt" \
+       -o -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) \
+    -not -path "*/node_modules/*" -not -path "*/.git/*" \
+    -not -path "*/vendor/*" -not -path "*/dist/*" -not -path "*/.tmp*/*" -not -path "*/.tmp-*" 2>/dev/null)
+
+  echo "$modules"
+}
+
+load_project_config() {
+  local config_file="$PROJECT_ROOT/specline/config.yaml"
+  MODULES_JSON=""
+
+  if [ -f "$config_file" ] && grep -q '^project:' "$config_file" 2>/dev/null; then
+    if grep -q '^    - path:' "$config_file" 2>/dev/null; then
+      MODULES_JSON=$(awk '
+        /^  modules:/ { in_modules=1; next }
+        /^  [a-z]/ && !/^    / { in_modules=0 }
+        /^[a-z]/ { in_modules=0 }
+        in_modules && /^    - path:/ {
+          if (path != "") printf ","
+          path=$NF; gsub(/["'\'']/, "", path)
+          printf "{\"path\":\"%s\"", path
+        }
+        in_modules && /^      language:/ {
+          lang=$NF; gsub(/["'\'']/, "", lang)
+          printf ",\"language\":\"%s\"}", lang
+        }
+      ' "$config_file")
+      if [ -n "$MODULES_JSON" ]; then
+        MODULES_JSON="[${MODULES_JSON}]"
+      fi
+    fi
+  fi
+
+  if [ -z "$MODULES_JSON" ] || [ "$MODULES_JSON" = "[]" ]; then
+    MODULES_JSON=$(detect_project_modules)
+  fi
+}
+
+module_absolute_path() {
+  local rel_path="$1"
+  if [ "$rel_path" = "." ] || [ "$rel_path" = "./" ]; then
+    echo "$PROJECT_ROOT"
+  else
+    echo "$PROJECT_ROOT/${rel_path%/}"
+  fi
+}
+
+module_has_eslint_config() {
+  local mod_dir="$1"
+  local f
+  for f in eslint.config.js eslint.config.mjs eslint.config.cjs .eslintrc.js .eslintrc.cjs .eslintrc.json; do
+    [ -f "$mod_dir/$f" ] && return 0
+  done
+  return 1
+}
+
+build_module() {
+  local rel_path="$1"
+  local lang="$2"
+  local mod_dir
+  mod_dir=$(module_absolute_path "$rel_path")
+
+  case "$lang" in
+    go)
+      echo "正在 build Go 模块: $rel_path"
+      if ! (cd "$mod_dir" && go build ./...); then
+        fail "Go build 失败 ($rel_path)"
+      fi
+      ;;
+    typescript)
+      echo "正在 build TypeScript 模块: $rel_path"
+      if ! (cd "$mod_dir" && npx tsc --noEmit); then
+        fail "TypeScript 编译失败 ($rel_path)"
+      fi
+      ;;
+    javascript)
+      echo "ℹ️  JavaScript 模块 $rel_path 无 compile 步骤，跳过 build"
+      ;;
+    python)
+      echo "正在检查 Python 语法: $rel_path"
+      if ! (cd "$mod_dir" && python3 -m compileall -q .); then
+        fail "Python 语法错误 ($rel_path)"
+      fi
+      ;;
+    rust)
+      echo "正在 build Rust 模块: $rel_path"
+      if ! (cd "$mod_dir" && cargo build); then
+        fail "Rust build 失败 ($rel_path)"
+      fi
+      ;;
+    java)
+      echo "正在 build Java 模块: $rel_path"
+      if ! (cd "$mod_dir" && mvn compile -q); then
+        fail "Java build 失败 ($rel_path)"
+      fi
+      ;;
+    kotlin)
+      echo "正在 build Kotlin 模块: $rel_path"
+      if [ -f "$mod_dir/build.gradle.kts" ] || [ -f "$mod_dir/build.gradle" ]; then
+        if ! (cd "$mod_dir" && ./gradlew compileKotlin -q 2>/dev/null || gradle compileKotlin -q); then
+          fail "Kotlin build 失败 ($rel_path)"
+        fi
+      fi
+      ;;
+    *)
+      echo "⚠️  未知语言 '$lang' ($rel_path)，跳过 build"
+      ;;
+  esac
+}
+
+lint_module() {
+  local rel_path="$1"
+  local lang="$2"
+  local mod_dir
+  mod_dir=$(module_absolute_path "$rel_path")
+
+  case "$lang" in
+    go)
+      echo "正在 lint Go 模块: $rel_path"
+      if command -v go &>/dev/null; then
+        if ! (cd "$mod_dir" && go vet ./...); then
+          fail "Go vet 失败 ($rel_path)"
+        fi
+        if command -v golangci-lint &>/dev/null; then
+          if ! (cd "$mod_dir" && golangci-lint run ./...); then
+            fail "golangci-lint 失败 ($rel_path)"
+          fi
+        fi
+      else
+        echo "⚠️  go 未安装，跳过 Go lint ($rel_path)"
+      fi
+      ;;
+    typescript|javascript)
+      if module_has_eslint_config "$mod_dir"; then
+        echo "正在 lint JS/TS 模块: $rel_path"
+        if command -v npx &>/dev/null; then
+          if ! (cd "$mod_dir" && npx eslint . --quiet); then
+            fail "ESLint 失败 ($rel_path)"
+          fi
+        fi
+      else
+        echo "ℹ️  模块 $rel_path 无 eslint 配置，跳过 JS/TS lint"
+      fi
+      ;;
+    python)
+      if command -v ruff &>/dev/null; then
+        echo "正在 lint Python 模块: $rel_path"
+        if ! (cd "$mod_dir" && ruff check . --quiet); then
+          fail "Python lint 失败 ($rel_path)"
+        fi
+      else
+        echo "⚠️  ruff 未安装，跳过 Python lint ($rel_path)"
+      fi
+      ;;
+    rust)
+      echo "正在 lint Rust 模块: $rel_path"
+      if ! (cd "$mod_dir" && cargo clippy -- -D warnings 2>/dev/null || cargo clippy); then
+        fail "Rust clippy 失败 ($rel_path)"
+      fi
+      ;;
+    java|kotlin)
+      echo "ℹ️  Java/Kotlin lint 暂未集成 ($rel_path)，跳过"
+      ;;
+    *)
+      echo "⚠️  未知语言 '$lang' ($rel_path)，跳过 lint"
+      ;;
+  esac
+}
+
+run_default_unit_test() {
+  local rel_path="$1"
+  local lang="$2"
+  local mod_dir
+  mod_dir=$(module_absolute_path "$rel_path")
+
+  case "$lang" in
+    go)
+      echo "正在执行 Go 单元测试: $rel_path"
+      if ! (cd "$mod_dir" && go test ./...); then
+        fail "Go 单元测试失败 ($rel_path)"
+      fi
+      ;;
+    python)
+      echo "正在执行 Python 单元测试: $rel_path"
+      if ! (cd "$mod_dir" && pytest); then
+        fail "Python 单元测试失败 ($rel_path)"
+      fi
+      ;;
+    typescript|javascript)
+      if [ -f "$mod_dir/package.json" ]; then
+        if grep -q '"vitest"' "$mod_dir/package.json" 2>/dev/null; then
+          echo "正在执行 Vitest 单元测试: $rel_path"
+          if ! (cd "$mod_dir" && npx vitest run); then
+            fail "Vitest 单元测试失败 ($rel_path)"
+          fi
+        elif grep -q '"jest"' "$mod_dir/package.json" 2>/dev/null; then
+          echo "正在执行 Jest 单元测试: $rel_path"
+          if ! (cd "$mod_dir" && npx jest); then
+            fail "Jest 单元测试失败 ($rel_path)"
+          fi
+        else
+          echo "⚠️  模块 $rel_path 未检测到 vitest/jest，跳过单元测试"
+        fi
+      fi
+      ;;
+    rust)
+      echo "正在执行 Rust 单元测试: $rel_path"
+      if ! (cd "$mod_dir" && cargo test); then
+        fail "Rust 单元测试失败 ($rel_path)"
+      fi
+      ;;
+    java)
+      echo "正在执行 Java 单元测试: $rel_path"
+      if [ -f "$mod_dir/pom.xml" ]; then
+        if ! (cd "$mod_dir" && mvn test -q); then
+          fail "Java 单元测试失败 ($rel_path)"
+        fi
+      fi
+      ;;
+    kotlin)
+      echo "正在执行 Kotlin 单元测试: $rel_path"
+      if [ -f "$mod_dir/build.gradle.kts" ] || [ -f "$mod_dir/build.gradle" ]; then
+        if ! (cd "$mod_dir" && ./gradlew test -q 2>/dev/null || gradle test -q); then
+          fail "Kotlin 单元测试失败 ($rel_path)"
+        fi
+      fi
+      ;;
+    *)
+      echo "⚠️  未知语言 '$lang' ($rel_path)，跳过单元测试"
+      ;;
+  esac
+}
+
+run_default_integration_test() {
+  local rel_path="$1"
+  local lang="$2"
+  local mod_dir
+  mod_dir=$(module_absolute_path "$rel_path")
+
+  case "$lang" in
+    go)
+      echo "正在执行 Go 集成测试: $rel_path"
+      if ! (cd "$mod_dir" && go test ./...); then
+        fail "Go 集成测试失败 ($rel_path)"
+      fi
+      ;;
+    python)
+      if [ -d "$mod_dir/tests/integration" ]; then
+        echo "正在执行 Python 集成测试: $rel_path"
+        if ! (cd "$mod_dir" && pytest tests/integration -v); then
+          fail "Python 集成测试失败 ($rel_path)"
+        fi
+      else
+        echo "ℹ️  模块 $rel_path 无 tests/integration/，跳过集成测试"
+      fi
+      ;;
+    typescript|javascript)
+      if [ -d "$mod_dir/tests/integration" ]; then
+        if grep -q '"vitest"' "$mod_dir/package.json" 2>/dev/null; then
+          if ! (cd "$mod_dir" && npx vitest run tests/integration); then
+            fail "Vitest 集成测试失败 ($rel_path)"
+          fi
+        elif grep -q '"jest"' "$mod_dir/package.json" 2>/dev/null; then
+          if ! (cd "$mod_dir" && npx jest tests/integration); then
+            fail "Jest 集成测试失败 ($rel_path)"
+          fi
+        fi
+      else
+        echo "ℹ️  模块 $rel_path 无 tests/integration/，跳过集成测试"
+      fi
+      ;;
+    rust)
+      if [ -d "$mod_dir/tests" ]; then
+        if ! (cd "$mod_dir" && cargo test --test '*' 2>/dev/null || cargo test); then
+          fail "Rust 集成测试失败 ($rel_path)"
+        fi
+      fi
+      ;;
+    *)
+      echo "ℹ️  语言 '$lang' 集成测试默认命令未定义 ($rel_path)，跳过"
+      ;;
+  esac
+}
+
+run_default_e2e_test() {
+  local rel_path="$1"
+  local lang="$2"
+  local mod_dir
+  mod_dir=$(module_absolute_path "$rel_path")
+
+  case "$lang" in
+    python)
+      if [ -d "$mod_dir/tests/e2e" ]; then
+        if ! (cd "$mod_dir" && pytest tests/e2e -v); then
+          fail "Python E2E 测试失败 ($rel_path)"
+        fi
+      else
+        echo "ℹ️  模块 $rel_path 无 tests/e2e/，跳过 E2E 测试"
+      fi
+      ;;
+    typescript|javascript)
+      if [ -d "$mod_dir/tests/e2e" ] || [ -d "$mod_dir/e2e" ]; then
+        local e2e_dir="tests/e2e"
+        [ -d "$mod_dir/e2e" ] && e2e_dir="e2e"
+        if grep -q '"vitest"' "$mod_dir/package.json" 2>/dev/null; then
+          if ! (cd "$mod_dir" && npx vitest run "$e2e_dir"); then
+            fail "Vitest E2E 测试失败 ($rel_path)"
+          fi
+        elif grep -q '"jest"' "$mod_dir/package.json" 2>/dev/null; then
+          if ! (cd "$mod_dir" && npx jest "$e2e_dir"); then
+            fail "Jest E2E 测试失败 ($rel_path)"
+          fi
+        fi
+      else
+        echo "ℹ️  模块 $rel_path 无 E2E 测试目录，跳过"
+      fi
+      ;;
+    *)
+      echo "ℹ️  语言 '$lang' E2E 测试默认命令未定义 ($rel_path)，跳过"
+      ;;
+  esac
+}
+
+verify_test_result_files() {
+  local result_file="$1"
+  local files_key="$2"
+  local missing=""
+
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if [ ! -f "$PROJECT_ROOT/$f" ]; then
+      missing="${missing}
+  - $f"
+    fi
+  done < <(jq -r --arg key "$files_key" '.[$key][]?' "$result_file" 2>/dev/null)
+
+  if [ -n "$missing" ]; then
+    fail "${files_key} 中的测试文件不存在:${missing}"
+  fi
+}
+
+run_tests_by_modules() {
+  local test_kind="$1"
+  local count
+  count=$(echo "$MODULES_JSON" | jq 'length')
+
+  if [ "$count" -eq 0 ]; then
+    echo "⚠️  未检测到项目模块，跳过${test_kind}测试"
+    return 0
+  fi
+
+  local i=0
+  while [ "$i" -lt "$count" ]; do
+    local path lang
+    path=$(echo "$MODULES_JSON" | jq -r ".[$i].path")
+    lang=$(echo "$MODULES_JSON" | jq -r ".[$i].language")
+
+    case "$test_kind" in
+      unit) run_default_unit_test "$path" "$lang" ;;
+      integration) run_default_integration_test "$path" "$lang" ;;
+      e2e) run_default_e2e_test "$path" "$lang" ;;
+    esac
+
+    i=$((i + 1))
+  done
 }
 
 # ===== Phase Handlers =====
@@ -255,14 +676,30 @@ gate_spec() {
   fi
   pass "Scenario 数量: $scenario_count"
 
-  # 6. WHEN/THEN 配对检查
-  local when_count then_count
-  when_count=$(grep -c "\*\*WHEN\*\*" "$spec_file" || echo "0")
-  then_count=$(grep -c "\*\*THEN\*\*" "$spec_file" || echo "0")
-  if [ "$when_count" -ne "$then_count" ]; then
-    fail "WHEN/THEN 数量不匹配。WHEN: $when_count, THEN: $then_count"
+  # 6. WHEN/THEN 语义检查（每个 Scenario 至少 1 WHEN + 1 THEN）
+  local bad_scenarios=""
+  local current_scenario="" has_when=0 has_then=0
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^####\ Scenario: ]]; then
+      if [ -n "$current_scenario" ] && { [ "$has_when" -eq 0 ] || [ "$has_then" -eq 0 ]; }; then
+        bad_scenarios="${bad_scenarios}\n  - ${current_scenario} (WHEN=${has_when}, THEN=${has_then})"
+      fi
+      current_scenario="${line#*Scenario: }"
+      has_when=0; has_then=0
+    fi
+    [[ "$line" == *'**WHEN**'* ]] && ((has_when++)) || true
+    [[ "$line" == *'**THEN**'* ]] && ((has_then++)) || true
+  done < "$spec_file"
+
+  if [ -n "$current_scenario" ] && { [ "$has_when" -eq 0 ] || [ "$has_then" -eq 0 ]; }; then
+    bad_scenarios="${bad_scenarios}\n  - ${current_scenario} (WHEN=${has_when}, THEN=${has_then})"
   fi
-  pass "WHEN/THEN 配对检查通过 ($when_count 对)"
+
+  if [ -n "$bad_scenarios" ]; then
+    fail "以下 Scenario 缺少 WHEN 或 THEN:${bad_scenarios}"
+  fi
+  pass "WHEN/THEN 语义检查通过 (每个 Scenario 至少 1 WHEN + 1 THEN)"
 
   # 7. review.json 状态检查（如果存在）
   local review_file
@@ -297,10 +734,20 @@ gate_spec() {
   # 9. 检查每个任务标注完整性
   local task_count type_count deps_count covers_count files_count
   task_count=$(grep -c '^## ' "$tasks_file" || echo "0")
+  task_count="${task_count%%[^0-9]*}"
+  task_count="${task_count:-0}"
   type_count=$(grep -c '\*\*Type\*\*:' "$tasks_file" || echo "0")
+  type_count="${type_count%%[^0-9]*}"
+  type_count="${type_count:-0}"
   deps_count=$(grep -c '\*\*Depends\*\*:' "$tasks_file" || echo "0")
+  deps_count="${deps_count%%[^0-9]*}"
+  deps_count="${deps_count:-0}"
   covers_count=$(grep -c '\*\*Covers\*\*:' "$tasks_file" || echo "0")
+  covers_count="${covers_count%%[^0-9]*}"
+  covers_count="${covers_count:-0}"
   files_count=$(grep -c '\*\*Files\*\*:' "$tasks_file" || echo "0")
+  files_count="${files_count%%[^0-9]*}"
+  files_count="${files_count:-0}"
 
   if [ "$type_count" -lt "$task_count" ] || [ "$deps_count" -lt "$task_count" ] || \
      [ "$covers_count" -lt "$task_count" ] || [ "$files_count" -lt "$task_count" ]; then
@@ -311,6 +758,8 @@ gate_spec() {
   # 10. Testable 字段校验
   local testable_count
   testable_count=$(grep -c '\*\*Testable\*\*:' "$tasks_file" || echo "0")
+  testable_count="${testable_count%%[^0-9]*}"
+  testable_count="${testable_count:-0}"
 
   if [ "$testable_count" -eq 0 ]; then
     echo "⚠️  Testable 标注缺失（向后兼容模式：缺失字段的任务将被视为 Testable: false）"
@@ -345,28 +794,44 @@ gate_spec() {
 }
 
 gate_build() {
-  # TypeScript 编译检查（如果存在 tsconfig.json）
-  if [ -f "$PROJECT_ROOT/tsconfig.json" ]; then
-    echo "正在检查 TypeScript 编译..."
-    if ! npx tsc --noEmit 2>&1; then
-      fail "TypeScript 编译失败"
-    fi
-    pass "TypeScript 编译通过"
+  load_project_config
+
+  local module_count
+  module_count=$(echo "$MODULES_JSON" | jq 'length')
+
+  if [ "$module_count" -eq 0 ]; then
+    echo "⚠️  未检测到项目模块，跳过 build 命令"
+  else
+    local i=0
+    while [ "$i" -lt "$module_count" ]; do
+      local path lang
+      path=$(echo "$MODULES_JSON" | jq -r ".[$i].path")
+      lang=$(echo "$MODULES_JSON" | jq -r ".[$i].language")
+      build_module "$path" "$lang"
+      i=$((i + 1))
+    done
+    pass "模块 build 检查通过 ($module_count 个模块)"
   fi
 
-  # Python 语法检查
-  echo "正在检查 Python 语法..."
-  local py_dirs=""
-  for d in agent server scripts; do
-    if [ -d "$PROJECT_ROOT/$d" ]; then
-      py_dirs="$py_dirs $d"
+  # Agent 产出 JSON 验证（task-result.json files_changed / files）
+  if [ -n "$CHANGE" ]; then
+    local task_result="$PROJECT_ROOT/specline/changes/$CHANGE/.tmp/task-result.json"
+    if [ -f "$task_result" ]; then
+      echo "正在验证 task-result.json 声明的文件..."
+      local missing_files=""
+      while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        if [ ! -f "$PROJECT_ROOT/$f" ]; then
+          missing_files="${missing_files}
+  - $f"
+        fi
+      done < <(jq -r '(.files_changed // .files // [])[]?' "$task_result" 2>/dev/null)
+
+      if [ -n "$missing_files" ]; then
+        fail "task-result.json 声明的文件不存在:${missing_files}"
+      fi
+      pass "task-result.json 文件验证通过"
     fi
-  done
-  if [ -n "$py_dirs" ]; then
-    if ! python -m compileall -q $py_dirs 2>&1; then
-      fail "Python 语法错误"
-    fi
-    pass "Python 语法检查通过"
   fi
 
   # 单元测试文件存在性检查（Testable=true 任务）
@@ -374,6 +839,8 @@ gate_build() {
   if [ -f "$tasks_file" ]; then
     local testable_true_count
     testable_true_count=$(grep -c '\*\*Testable\*\*:.*true' "$tasks_file" || echo "0")
+    testable_true_count="${testable_true_count%%[^0-9]*}"
+    testable_true_count="${testable_true_count:-0}"
 
     if [ "$testable_true_count" -gt 0 ]; then
       echo "正在检查 $testable_true_count 个 Testable=true 任务的单元测试文件..."
@@ -384,7 +851,7 @@ gate_build() {
       while IFS='|' read -r task_id file_path; do
         if [ -z "$file_path" ]; then
           missing_files="${missing_files}
-  任务 $task_id: 未在 Files 列表中声明 tests/unit/ 或 tests/models/ 下的测试文件"
+  任务 $task_id: 未在 Files 列表中声明测试文件（支持 tests/unit/、tests/models/、*_test.go、*.test.ts 等）"
           continue
         fi
 
@@ -394,18 +861,21 @@ gate_build() {
           continue
         fi
 
-        # 语法检查
         case "$file_path" in
           *.py)
-            if ! python -m py_compile "$PROJECT_ROOT/$file_path" 2>&1; then
-              syntax_errors="${syntax_errors}
+            if command -v python3 &>/dev/null; then
+              if ! python3 -m py_compile "$PROJECT_ROOT/$file_path" 2>&1; then
+                syntax_errors="${syntax_errors}
   任务 $task_id: $file_path (Python 语法错误)"
+              fi
             fi
             ;;
           *.ts|*.tsx)
-            if ! npx tsc --noEmit "$PROJECT_ROOT/$file_path" 2>&1; then
-              syntax_errors="${syntax_errors}
+            if command -v npx &>/dev/null; then
+              if ! npx tsc --noEmit "$PROJECT_ROOT/$file_path" 2>&1; then
+                syntax_errors="${syntax_errors}
   任务 $task_id: $file_path (TypeScript 语法错误)"
+              fi
             fi
             ;;
         esac
@@ -420,15 +890,19 @@ gate_build() {
             files_line = $0
             gsub(/.*\*\*Files\*\*:[ \t]*/, "", files_line)
             split(files_line, paths, /,[ \t]*/)
-            has_unit_test = 0
+            has_test = 0
             for (i in paths) {
               gsub(/^[ \t]+|[ \t]+$/, "", paths[i])
-              if (paths[i] ~ /^tests\/(unit|models)\//) {
+              if (paths[i] ~ /^tests\/(unit|models)\// ||
+                  paths[i] ~ /_test\.go$/ ||
+                  paths[i] ~ /\.test\.(ts|tsx|js|jsx)$/ ||
+                  paths[i] ~ /\.spec\.(ts|tsx|js|jsx)$/ ||
+                  paths[i] ~ /^src\/.*\/tests\.rs$/) {
                 print task_id "|" paths[i]
-                has_unit_test = 1
+                has_test = 1
               }
             }
-            if (has_unit_test == 0) {
+            if (has_test == 0) {
               print task_id "|"
             }
           }
@@ -454,26 +928,23 @@ gate_build() {
 }
 
 gate_lint() {
-  # Python lint (ruff)
-  if command -v ruff &>/dev/null; then
-    echo "正在检查 Python 代码规范..."
-    if ! ruff check "$PROJECT_ROOT" --quiet 2>&1; then
-      fail "Python lint 失败"
-    fi
-    pass "Python lint 通过"
-  else
-    echo "⚠️  ruff 未安装，跳过 Python lint"
-  fi
+  load_project_config
 
-  # JS/TS lint (eslint)
-  if [ -f "$PROJECT_ROOT/package.json" ]; then
-    if command -v npx &>/dev/null; then
-      echo "正在检查 JS/TS 代码规范..."
-      if ! npx eslint "$PROJECT_ROOT" --max-warnings 0 --quiet 2>&1; then
-        fail "JS/TS lint 失败"
-      fi
-      pass "JS/TS lint 通过"
-    fi
+  local module_count
+  module_count=$(echo "$MODULES_JSON" | jq 'length')
+
+  if [ "$module_count" -eq 0 ]; then
+    echo "⚠️  未检测到项目模块，跳过 lint"
+  else
+    local i=0
+    while [ "$i" -lt "$module_count" ]; do
+      local path lang
+      path=$(echo "$MODULES_JSON" | jq -r ".[$i].path")
+      lang=$(echo "$MODULES_JSON" | jq -r ".[$i].language")
+      lint_module "$path" "$lang"
+      i=$((i + 1))
+    done
+    pass "模块 lint 检查通过 ($module_count 个模块)"
   fi
 
   # code-review.json error 计数（位于 change 的 .tmp/ 目录下）
@@ -481,6 +952,8 @@ gate_lint() {
   if [ -f "$review_file" ]; then
     local error_count
     error_count=$(jq '[.findings[] | select(.severity=="error")] | length' "$review_file" 2>/dev/null || echo "0")
+    error_count="${error_count%%[^0-9]*}"
+    error_count="${error_count:-0}"
     if [ "$error_count" -gt 0 ]; then
       fail "code-review.json 中发现 $error_count 个 error，必须修复"
     fi
@@ -492,7 +965,7 @@ gate_lint() {
 }
 
 # ===== 测试框架自动检测 =====
-# 优先级：.pipeline-state.json 中的 test_framework > 项目配置文件检测 > 默认 pytest
+# 优先级：.pipeline-state.json > test-code-result.json > MODULES_JSON 推导 > 无兜底
 detect_test_framework() {
   framework="" test_cmd="" coverage_cmd=""
 
@@ -505,99 +978,148 @@ detect_test_framework() {
     fi
   fi
 
-  # 2. 如果状态文件没有，从项目配置文件检测
-  if [ -z "$framework" ]; then
-    if [ -f "$PROJECT_ROOT/package.json" ]; then
-      if grep -q '"jest"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
-        framework="jest"
-      elif grep -q '"vitest"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
-        framework="vitest"
-      elif grep -q '"mocha"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
-        framework="mocha"
-      fi
-    elif [ -f "$PROJECT_ROOT/go.mod" ]; then
-      framework="go-test"
-    elif [ -f "$PROJECT_ROOT/Cargo.toml" ]; then
-      framework="cargo-test"
-    elif [ -f "$PROJECT_ROOT/pom.xml" ] || [ -f "$PROJECT_ROOT/build.gradle" ]; then
-      framework="junit"
+  # 2. 从 test-code-result.json 读取
+  if [ -z "$framework" ] && [ -n "$CHANGE" ]; then
+    local test_result="$PROJECT_ROOT/specline/changes/$CHANGE/.tmp/test-code-result.json"
+    if [ -f "$test_result" ]; then
+      framework=$(jq -r '.test_framework // empty' "$test_result" 2>/dev/null)
+      test_cmd=$(jq -r '.test_cmd // empty' "$test_result" 2>/dev/null)
     fi
   fi
 
-  # 3. 默认兜底
+  # 3. 从 MODULES_JSON 推导
   if [ -z "$framework" ]; then
-    framework="pytest"
+    load_project_config
+    local module_count
+    module_count=$(echo "$MODULES_JSON" | jq 'length')
+    if [ "$module_count" -gt 0 ]; then
+      local lang
+      lang=$(echo "$MODULES_JSON" | jq -r '.[0].language')
+      case "$lang" in
+        go) framework="go-test" ;;
+        python) framework="pytest" ;;
+        rust) framework="cargo-test" ;;
+        java) framework="junit" ;;
+        kotlin) framework="junit" ;;
+        typescript|javascript)
+          local mod_path
+          mod_path=$(echo "$MODULES_JSON" | jq -r '.[0].path')
+          local mod_dir
+          mod_dir=$(module_absolute_path "$mod_path")
+          if [ -f "$mod_dir/package.json" ]; then
+            if grep -q '"vitest"' "$mod_dir/package.json" 2>/dev/null; then
+              framework="vitest"
+            elif grep -q '"jest"' "$mod_dir/package.json" 2>/dev/null; then
+              framework="jest"
+            elif grep -q '"mocha"' "$mod_dir/package.json" 2>/dev/null; then
+              framework="mocha"
+            fi
+          fi
+          ;;
+      esac
+    fi
   fi
 
-  # 根据框架确定命令
-  case "$framework" in
-    jest)
-      test_cmd="npx jest"
-      coverage_cmd="npx jest --coverage"
-      ;;
-    vitest)
-      test_cmd="npx vitest run"
-      coverage_cmd="npx vitest run --coverage"
-      ;;
-    mocha)
-      test_cmd="npx mocha"
-      coverage_cmd="npx nyc mocha"
-      ;;
-    go-test)
-      test_cmd="go test"
-      coverage_cmd="go test -cover"
-      ;;
-    cargo-test)
-      test_cmd="cargo test"
-      coverage_cmd="cargo tarpaulin 2>/dev/null || cargo test"  # tarpaulin 可能未安装
-      ;;
-    junit)
-      if [ -f "$PROJECT_ROOT/pom.xml" ]; then
-        test_cmd="mvn test"
-        coverage_cmd="mvn jacoco:report"
-      else
-        test_cmd="gradle test"
-        coverage_cmd="gradle jacocoTestReport"
-      fi
-      ;;
-    pytest|*)
-      test_cmd="pytest"
-      coverage_cmd="pytest --cov --cov-fail-under=80"
-      ;;
-  esac
+  # 4. 无兜底 pytest — 检测失败时 framework 为空
+  if [ -z "$framework" ]; then
+    echo "⚠️  未检测到测试框架"
+    return 0
+  fi
 
-  echo "检测到测试框架: $framework (命令: $test_cmd)"
+  # 根据框架确定命令（test_cmd 可能已由 JSON 提供）
+  if [ -z "$test_cmd" ]; then
+    case "$framework" in
+      jest)
+        test_cmd="npx jest"
+        coverage_cmd="npx jest --coverage"
+        ;;
+      vitest)
+        test_cmd="npx vitest run"
+        coverage_cmd="npx vitest run --coverage"
+        ;;
+      mocha)
+        test_cmd="npx mocha"
+        coverage_cmd="npx nyc mocha"
+        ;;
+      go-test)
+        test_cmd="go test ./..."
+        coverage_cmd="go test -cover ./..."
+        ;;
+      cargo-test)
+        test_cmd="cargo test"
+        coverage_cmd="cargo tarpaulin 2>/dev/null || cargo test"
+        ;;
+      junit)
+        local mod_path mod_dir
+        mod_path=$(echo "$MODULES_JSON" | jq -r '.[0].path // "."')
+        mod_dir=$(module_absolute_path "$mod_path")
+        if [ -f "$mod_dir/pom.xml" ]; then
+          test_cmd="mvn test"
+          coverage_cmd="mvn jacoco:report"
+        else
+          test_cmd="gradle test"
+          coverage_cmd="gradle jacocoTestReport"
+        fi
+        ;;
+      pytest)
+        test_cmd="pytest"
+        coverage_cmd="pytest --cov --cov-fail-under=80"
+        ;;
+      *)
+        test_cmd=""
+        coverage_cmd=""
+        ;;
+    esac
+  fi
+
+  if [ -n "$framework" ] && [ -n "$test_cmd" ]; then
+    echo "检测到测试框架: $framework (命令: $test_cmd)"
+  fi
 }
 
 gate_test_unit() {
   echo "正在执行单元测试..."
-  detect_test_framework
+  load_project_config
 
-  # 确定测试目录
-  local test_dir=""
-  for d in "$PROJECT_ROOT/tests/unit" "$PROJECT_ROOT/tests" "$PROJECT_ROOT/__tests__" "$PROJECT_ROOT/test"; do
-    if [ -d "$d" ]; then
-      test_dir="$d"
-      break
-    fi
-  done
-
-  if [ -z "$test_dir" ]; then
-    echo "⚠️  未找到测试目录，尝试用框架默认命令运行..."
-    if ! eval "$test_cmd" 2>&1; then
-      fail "单元测试失败（无测试目录且框架命令执行失败）"
-    fi
-  else
-    echo "测试目录: $test_dir"
-    if ! eval "$test_cmd \"$test_dir\" -v 2>&1"; then
-      fail "单元测试失败"
-    fi
+  local test_result=""
+  if [ -n "$CHANGE" ]; then
+    test_result="$PROJECT_ROOT/specline/changes/$CHANGE/.tmp/test-code-result.json"
   fi
 
-  # 覆盖率检查（非阻塞，警告即可——覆盖率的深入分析由 test-runner agent 负责）
-  echo "正在检查覆盖率..."
-  if ! eval "$coverage_cmd \"$test_dir\" 2>&1"; then
-    echo "⚠️  覆盖率检查未通过（不阻塞，由 test-runner agent 深入分析）"
+  if [ -n "$test_result" ] && [ -f "$test_result" ]; then
+    local test_cmd
+    test_cmd=$(jq -r '.test_cmd // empty' "$test_result" 2>/dev/null)
+
+    verify_test_result_files "$test_result" "test_files"
+
+    if [ -n "$test_cmd" ]; then
+      echo "执行 Agent 声明的 test_cmd: $test_cmd"
+      if ! (cd "$PROJECT_ROOT" && eval "$test_cmd"); then
+        fail "单元测试失败"
+      fi
+    else
+      echo "⚠️  test-code-result.json 无 test_cmd，回退到模块默认命令"
+      run_tests_by_modules "unit"
+    fi
+  else
+    local module_count
+    module_count=$(echo "$MODULES_JSON" | jq 'length')
+    if [ "$module_count" -eq 0 ]; then
+      echo "⚠️  未检测到项目模块且无 test-code-result.json，跳过单元测试"
+      write_gate_passed "phases.test.sub_phases.unit.gates.test_unit_gate"
+      pass "单元测试已跳过"
+      return 0
+    fi
+    run_tests_by_modules "unit"
+  fi
+
+  # 覆盖率检查（非阻塞）
+  detect_test_framework
+  if [ -n "${coverage_cmd:-}" ]; then
+    echo "正在检查覆盖率..."
+    if ! (cd "$PROJECT_ROOT" && eval "$coverage_cmd" 2>&1); then
+      echo "⚠️  覆盖率检查未通过（不阻塞，由 test-runner agent 深入分析）"
+    fi
   fi
 
   write_gate_passed "phases.test.sub_phases.unit.gates.test_unit_gate"
@@ -606,53 +1128,78 @@ gate_test_unit() {
 
 gate_test_integration() {
   echo "正在执行集成测试..."
-  detect_test_framework
+  load_project_config
 
-  local test_dir=""
-  for d in "$PROJECT_ROOT/tests/integration" "$PROJECT_ROOT/__tests__/integration"; do
-    if [ -d "$d" ]; then
-      test_dir="$d"
-      break
+  local test_result=""
+  if [ -n "$CHANGE" ]; then
+    test_result="$PROJECT_ROOT/specline/changes/$CHANGE/.tmp/test-code-result.json"
+  fi
+
+  if [ -n "$test_result" ] && [ -f "$test_result" ]; then
+    local test_cmd
+    test_cmd=$(jq -r '.integration_test_cmd // empty' "$test_result" 2>/dev/null)
+
+    if jq -e '.integration_test_files | length > 0' "$test_result" &>/dev/null; then
+      verify_test_result_files "$test_result" "integration_test_files"
     fi
-  done
 
-  if [ -z "$test_dir" ]; then
-    echo "⚠️  无集成测试目录，跳过"
+    if [ -n "$test_cmd" ]; then
+      echo "执行 Agent 声明的 integration_test_cmd: $test_cmd"
+      if ! (cd "$PROJECT_ROOT" && eval "$test_cmd"); then
+        fail "集成测试失败"
+      fi
+    else
+      run_tests_by_modules "integration"
+    fi
   else
-    echo "测试目录: $test_dir"
-    if ! eval "$test_cmd \"$test_dir\" -v 2>&1"; then
-      fail "集成测试失败"
-    fi
-    # 覆盖率
-    if ! eval "$coverage_cmd \"$test_dir\" 2>&1"; then
-      echo "⚠️  覆盖率检查未通过（不阻塞）"
+    local module_count
+    module_count=$(echo "$MODULES_JSON" | jq 'length')
+    if [ "$module_count" -eq 0 ]; then
+      echo "⚠️  未检测到项目模块且无 test-code-result.json，跳过集成测试"
+    else
+      run_tests_by_modules "integration"
     fi
   fi
+
   write_gate_passed "phases.test.sub_phases.integration.gates.test_integration_gate"
   pass "集成测试通过"
 }
 
 gate_test_e2e() {
   echo "正在执行 E2E 测试..."
-  detect_test_framework
+  load_project_config
 
-  local test_dir=""
-  for d in "$PROJECT_ROOT/tests/e2e" "$PROJECT_ROOT/__tests__/e2e" "$PROJECT_ROOT/e2e"; do
-    if [ -d "$d" ]; then
-      test_dir="$d"
-      break
-    fi
-  done
-
-  if [ -z "$test_dir" ]; then
-    echo "⚠️  无 E2E 测试目录，跳过"
-  else
-    echo "测试目录: $test_dir"
-    if ! eval "$test_cmd \"$test_dir\" -v 2>&1"; then
-      fail "E2E 测试失败"
-    fi
-    # E2E 通常不需要覆盖率检查
+  local test_result=""
+  if [ -n "$CHANGE" ]; then
+    test_result="$PROJECT_ROOT/specline/changes/$CHANGE/.tmp/test-code-result.json"
   fi
+
+  if [ -n "$test_result" ] && [ -f "$test_result" ]; then
+    local test_cmd
+    test_cmd=$(jq -r '.e2e_test_cmd // empty' "$test_result" 2>/dev/null)
+
+    if jq -e '.e2e_test_files | length > 0' "$test_result" &>/dev/null; then
+      verify_test_result_files "$test_result" "e2e_test_files"
+    fi
+
+    if [ -n "$test_cmd" ]; then
+      echo "执行 Agent 声明的 e2e_test_cmd: $test_cmd"
+      if ! (cd "$PROJECT_ROOT" && eval "$test_cmd"); then
+        fail "E2E 测试失败"
+      fi
+    else
+      run_tests_by_modules "e2e"
+    fi
+  else
+    local module_count
+    module_count=$(echo "$MODULES_JSON" | jq 'length')
+    if [ "$module_count" -eq 0 ]; then
+      echo "⚠️  未检测到项目模块且无 test-code-result.json，跳过 E2E 测试"
+    else
+      run_tests_by_modules "e2e"
+    fi
+  fi
+
   write_gate_passed "phases.test.sub_phases.e2e.gates.test_e2e_gate"
   pass "E2E 测试通过"
 }
@@ -816,7 +1363,11 @@ case "$PHASE" in
     gate_test_e2e
     ;;
   bind)
-    gate_bind "$2" "$3"
+    gate_bind "${POSITIONAL_ARGS[0]:-}" "${POSITIONAL_ARGS[1]:-}"
+    ;;
+  detect-modules)
+    load_project_config
+    echo "$MODULES_JSON"
     ;;
   archive)
     gate_archive "$@"
@@ -826,7 +1377,7 @@ case "$PHASE" in
     ;;
   *)
     echo "未知 phase: $PHASE"
-    echo "可用: new | list | artifacts | spec | build | lint | test-unit | test-integration | test-e2e | archive | status"
+    echo "可用: new | list | artifacts | spec | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status"
     exit 2
     ;;
 esac

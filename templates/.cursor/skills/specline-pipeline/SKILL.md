@@ -119,6 +119,50 @@ specline-pipeline-gate.sh new --change "<kebab-case-name>"
 
 > 📋 完整 JSON Schema 见 [附录 A](#附录-a-pipeline-statejson-完整-schema)
 
+#### Step 1b: 项目语言检测（spec-creator 上下文准备）
+
+在启动 spec-creator 前，执行项目语言检测以获取技术栈信息：
+
+```bash
+# 检测项目中的语言标记文件
+MODULES_JSON=$(.cursor/hooks/specline-pipeline-gate.sh detect-modules 2>/dev/null || echo '[]')
+```
+
+如果 Gate 脚本尚未支持 `detect-modules` 子命令，编排者可通过以下 shell 命令手动检测：
+
+```bash
+# 手动检测（fallback）
+MODULES=""
+if find "$PROJECT_ROOT" -maxdepth 2 -name "go.mod" -not -path "*/vendor/*" | grep -q .; then
+  MODULES="$MODULES go"
+fi
+if find "$PROJECT_ROOT" -maxdepth 2 -name "package.json" -not -path "*/node_modules/*" | grep -q .; then
+  MODULES="$MODULES javascript/typescript"
+fi
+if find "$PROJECT_ROOT" -maxdepth 2 -name "Cargo.toml" | grep -q .; then
+  MODULES="$MODULES rust"
+fi
+if find "$PROJECT_ROOT" -maxdepth 2 -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" | grep -q .; then
+  MODULES="$MODULES java"
+fi
+if find "$PROJECT_ROOT" -maxdepth 2 -name "pyproject.toml" -o -name "setup.py" -o -name "requirements.txt" | grep -q .; then
+  MODULES="$MODULES python"
+fi
+# 也可读取 specline/config.yaml 的 project.modules 覆盖自动检测结果
+```
+
+将检测结果格式化为语言上下文文本，注入到 spec-creator 和后续 coding agent 的 prompt 中：
+
+```
+## 项目技术栈（自动检测）
+- 语言: Go
+- 布局: monorepo (backend/ + frontend/)
+- Go 测试约定: 测试文件与源码同目录，命名 *_test.go
+- Go 测试命令: go test ./...
+```
+
+> 编排者应将上述上下文保存在会话变量中（如 `LANGUAGE_CONTEXT`），供 Step 2 和 Step 7 的 prompt 模板引用。
+
 #### Step 2: 启动 specline-spec-creator
 
 specline-spec-creator 子 Agent 的职责是根据内联模板直接生成全部规划文件：
@@ -128,6 +172,8 @@ specline-spec-creator 子 Agent 的职责是根据内联模板直接生成全部
 - `specs/<capability>/spec.md` — 功能规格（Requirements/Scenarios）
 
 使用 Task 工具，subagent_type="specline-spec-creator"，描述中传入 change name 和自然语言需求，让 specline-spec-creator 根据内联模板直接生成。
+
+> **注意**：启动 spec-creator 时，prompt 中应包含 Step 1b 检测到的项目语言上下文。这使 speccline-spec-creator 能正确生成语言适配的测试文件归属表。
 
 > **任务标注规范**：tasks.md 每个任务必须包含：
 > - `Type`: frontend | backend | infra | db | config | docs
@@ -326,7 +372,7 @@ jq --argjson tasks '[
 
 #### Step 7: 按批次并发派发 Coding Agent
 
-对每个批次依次处理：
+对每个批次依次处理。派发前，将 Step 1b 格式化的语言上下文赋值给 `languageContext` 变量（来自 `LANGUAGE_CONTEXT`），注入到各 coding agent 的 prompt 中。
 
 **7a. 同一批次内所有任务并发派发**，根据 Type 选择对应的 agent：
 
@@ -358,6 +404,10 @@ for (const task of currentBatchTasks) {
     // === TDD prompt（Testable: true） ===
     prompt = `
 你收到一个编码任务（Type: ${task.type}, Testable: true），请按 TDD（测试驱动开发）方式实现本任务范围内的代码。
+
+${languageContext || ''}
+
+> **注意**：如果 Step 1b 检测到项目语言信息，编排者应将其注入到每个 coding agent 的 prompt 中，使其了解项目的测试约定和目录结构。
 
 ## 上下文文件（只读参考）
 - Spec: specline/changes/${changeName}/specs/${capability}/spec.md
@@ -422,6 +472,10 @@ ${task.content}
     // === 标准编码 prompt（Testable: false，有代码逻辑） ===
     prompt = `
 你收到一个编码任务（Type: ${task.type}, Testable: false），请只实现本任务范围内的代码。
+
+${languageContext || ''}
+
+> **注意**：如果 Step 1b 检测到项目语言信息，编排者应将其注入到每个 coding agent 的 prompt 中，使其了解项目的测试约定和目录结构。
 
 ## 上下文文件（只读参考）
 - Spec: specline/changes/${changeName}/specs/${capability}/spec.md

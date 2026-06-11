@@ -19,6 +19,7 @@ description: >-
 - 功能名称 → kebab-case change name（如 "添加用户登录" → `add-user-login`）
 - 核心功能点列表
 - 技术栈上下文（如果有）
+- 语言上下文（由编排者从项目检测结果注入，用于确定测试路径约定）
 
 #### Step 2: 创建目录结构
 
@@ -211,16 +212,33 @@ specline-pipeline-gate.sh new --change "<change-name>"
 ````markdown
 ### 测试文件归属
 
+根据编排者注入的项目语言上下文选择对应的测试路径约定：
+
+| 语言 | 单元测试路径 | 集成/E2E 测试路径 | 命名约定 |
+|------|------------|-----------------|---------|
+| Go | `<package>/<name>_test.go`（与源码同目录） | `tests/integration/` 或内联 | `TestXxx` 函数 |
+| Python | `tests/unit/<module>/test_<name>.py` | `tests/integration/test_<cap>.py` | `test_xxx` 函数 |
+| TypeScript/JavaScript | `__tests__/<name>.test.ts` 或 `<name>.spec.ts` | `tests/integration/<cap>.test.ts` | `describe/it` 块 |
+| Rust | `src/<mod>/tests.rs` 或 `#[cfg(test)]` 模块 | `tests/<name>.rs` | `#[test] fn xxx()` |
+
+**生成规则**：
+- 如果语言上下文为 Go：单元测试路径使用模块相对路径 + `_test.go` 后缀，不生成 `tests/unit/` 引用
+- 如果语言上下文为 Python：保持原有 `tests/unit/<module>/` 约定
+- 如果语言上下文为 TypeScript：使用 `__tests__/` 或与源码同级的 `.test.ts`
+- 如果无语言上下文（向后兼容）：使用 Python 约定作为默认
+
 | 测试文件（目录） | 测试类型 | 负责者 |
 |-----------------|---------|-------|
-| tests/unit/<module>/ | 单元测试 | Coding Agent (Task N) |
-| tests/integration/test_<capability>.py | 集成测试 | specline-test-writer |
-| tests/e2e/test_<capability>_flow.py | E2E 测试 | specline-test-writer |
+| [根据语言约定的单元测试路径] | 单元测试 | Coding Agent (Task N) |
+| [根据语言约定的集成测试路径] | 集成测试 | specline-test-writer |
+| [根据语言约定的 E2E 测试路径] | E2E 测试 | specline-test-writer |
 ````
 
 **生成规则**：
-- 对每个 `Testable: true` 的任务，从其任务描述和 Files 字段推导模块名，生成单元测试目录行（`tests/unit/<module>/` 或 `tests/models/<module>/`），负责者标注为「Coding Agent (Task N)」
-- 对 `specs/` 下每个 capability 目录，生成集成测试文件行（`tests/integration/test_<capability>.py`）和 E2E 测试文件行（`tests/e2e/test_<capability>_flow.py`），负责者标注为「specline-test-writer」
+- 根据编排者注入的语言上下文，从上方语言映射表选择对应的测试路径约定（无语言上下文时默认 Python）
+- 对每个 `Testable: true` 的任务，从其任务描述和 Files 字段推导模块名，按语言约定生成单元测试路径行，负责者标注为「Coding Agent (Task N)」
+- 对 `specs/` 下每个 capability 目录，按语言约定生成集成测试和 E2E 测试路径行，负责者标注为「specline-test-writer」
+- Go 项目禁止生成 `tests/unit/` 引用；单元测试路径使用 `_test.go` 后缀与源码同目录
 - 表格按 capability 分组，单元测试行在前、集成/E2E 测试行在后
 - 如果无 Testable: true 的任务，跳过 Coding Agent 的单元测试行，仅保留集成/E2E 行
 - **测试文件归属** 节放在所有 `## N. [ ]` 任务节之后、tasks.md 文件末尾
