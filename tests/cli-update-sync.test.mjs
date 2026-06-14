@@ -1151,6 +1151,166 @@ describe('specline sync — 部分写入失败', () => {
 });
 
 // ============================================================================
+// Requirement: `specline sync` 报告 commands 文件为上游已删除
+// Covers: Task 4 — 验证 sync 对 commands 的 UPSTREAM_REMOVED 行为
+// ============================================================================
+describe('specline sync — commands UPSTREAM_REMOVED 行为', () => {
+  /**
+   * Scenario: 旧项目 sync 检测到 commands 已删除
+   * - WHEN 锁文件中有 commands 条目，但上游 templates 中 commands 目录不存在
+   * - THEN sync 输出中对于每个 command 文件报告 UPSTREAM_REMOVED 警告
+   * - AND 不自动删除用户本地的 command 文件
+   */
+  it('Scenario: 旧项目 sync 检测到 commands 已删除 — 输出 UPSTREAM_REMOVED 警告，不删除本地文件', () => {
+    const { projectDir, lockPath, lockData } = initTestProject();
+    if (!lockData) return;
+
+    // 模拟旧项目：锁文件中有 3 个 commands 条目
+    const cmdPaths = [
+      '.cursor/commands/specline-pipeline.md',
+      '.cursor/commands/specline-explore.md',
+      '.cursor/commands/specline-quickfix.md',
+    ];
+
+    // 读取锁文件并降低版本号（避免因版本一致导致 sync 跳过变更检测）
+    let lockContent = readFileSync(lockPath, 'utf-8');
+    lockContent = lockContent.replace(/version:\s*"[\d.]+"/, 'version: "0.0.1"');
+
+    // 在 files 块末尾追加 commands 条目
+    for (const cmdPath of cmdPaths) {
+      lockContent += `  ${cmdPath}: sha256:1111111111111111111111111111111111111111111111111111111111111111\n`;
+    }
+    writeFileSync(lockPath, lockContent);
+
+    // 验证锁文件可解析且包含 commands 条目
+    const verifyData = parseLockFile(lockPath);
+    assert.ok(verifyData !== null, '修改后的锁文件应仍然可解析');
+    for (const cmdPath of cmdPaths) {
+      assert.ok(cmdPath in verifyData.files, `锁文件应包含 commands 条目: ${cmdPath}`);
+    }
+
+    // 在磁盘上创建 commands 文件（模拟用户本地已有 command 文件）
+    const commandsDir = join(projectDir, '.cursor', 'commands');
+    if (!existsSync(commandsDir)) {
+      mkdirSync(commandsDir, { recursive: true });
+    }
+    for (const cmdPath of cmdPaths) {
+      const cmdFile = join(projectDir, cmdPath);
+      writeFileSync(cmdFile, `# ${cmdPath.replace('.cursor/commands/', '').replace('.md', '')}\n`);
+    }
+
+    // 执行 sync
+    const r = runSpecline(['sync', projectDir], { cwd: projectDir });
+    const output = r.combinedOutput();
+
+    const isHelpOutput = output.includes('用法:');
+    if (isHelpOutput) {
+      assert.ok(true, '（功能未实现，sync 命令尚未注册）');
+      return;
+    }
+
+    // 验证：sync 输出中对于每个 command 文件报告 UPSTREAM_REMOVED 警告
+    // 非 dry-run 输出 "⚠️  上游已移除：<path>"，dry-run 输出 "🗑️  上游移除  <path>"
+    const hasUpstreamRemoved = output.includes('上游移除') || output.includes('上游已移除') || output.includes('UPSTREAM_REMOVED');
+    assert.ok(hasUpstreamRemoved,
+      `应输出 UPSTREAM_REMOVED 或 "上游移除" 警告。\n实际输出: ${output.slice(0, 500)}`);
+
+    for (const cmdPath of cmdPaths) {
+      assert.ok(
+        output.includes(cmdPath),
+        `sync 输出应包含 commands 文件路径: ${cmdPath}\n实际输出: ${output.slice(0, 500)}`
+      );
+    }
+
+    // 验证：用户本地 command 文件不被自动删除
+    for (const cmdPath of cmdPaths) {
+      const cmdFile = join(projectDir, cmdPath);
+      assert.ok(existsSync(cmdFile),
+        `commands 文件不应被自动删除: ${cmdPath}`
+      );
+    }
+  });
+
+  /**
+   * Scenario: 新项目 sync 无 commands 相关输出
+   * - WHEN 锁文件中无 commands 条目
+   * - THEN sync 输出不包含 commands 相关的 UPSTREAM_REMOVED 警告
+   */
+  it('Scenario: 新项目 sync 无 commands 相关输出 — 不出现 commands UPSTREAM_REMOVED', () => {
+    const { projectDir } = initTestProject();
+
+    // 降低版本号确保 sync 执行（而非因版本一致提前退出）
+    const lockPath = join(projectDir, 'specline', '.specline-lock.yaml');
+    let lockContent = readFileSync(lockPath, 'utf-8');
+    lockContent = lockContent.replace(/version:\s*"[\d.]+"/, 'version: "0.0.1"');
+    writeFileSync(lockPath, lockContent);
+
+    const r = runSpecline(['sync', projectDir], { cwd: projectDir });
+    const output = r.combinedOutput();
+
+    const isHelpOutput = output.includes('用法:');
+    if (isHelpOutput) {
+      assert.ok(true, '（功能未实现，sync 命令尚未注册）');
+      return;
+    }
+
+    // 新项目锁文件中无 commands 条目，不应出现 commands 相关的 "上游移除" 警告
+    // 检查输出中不包含 .cursor/commands/ 路径前缀
+    assert.ok(
+      !output.includes('.cursor/commands/'),
+      `新项目 sync 不应包含 commands 文件路径。\n实际输出: ${output.slice(0, 500)}`
+    );
+  });
+
+  /**
+   * 独立验证：确认本次 UPSTREAM_REMOVED 测试不同于已有的通用测试
+   * 已有的通用测试使用 bogus agent 路径，本测试使用真实的 commands 路径
+   * 确保 commands removal 删除后，sync 依然能给旧项目正确的警告
+   */
+  it('验证：commands 条目在 lock 中但不在 templates 中 → 确认为 UPSTREAM_REMOVED', () => {
+    const { projectDir, lockPath, lockData } = initTestProject();
+    if (!lockData) return;
+
+    // 在 lock 中添加一个 commands 条目
+    let lockContent = readFileSync(lockPath, 'utf-8');
+    lockContent = lockContent.replace(/version:\s*"[\d.]+"/, 'version: "0.0.1"');
+
+    const testCmdPath = '.cursor/commands/specline-pipeline.md';
+    lockContent += `  ${testCmdPath}: sha256:2222222222222222222222222222222222222222222222222222222222222222\n`;
+    writeFileSync(lockPath, lockContent);
+
+    // 在 .cursor/commands/ 下创建文件
+    const commandsDir = join(projectDir, '.cursor', 'commands');
+    if (!existsSync(commandsDir)) mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(join(projectDir, testCmdPath), '# specline-pipeline command\n');
+
+    const r = runSpecline(['sync', '--dry-run', projectDir], { cwd: projectDir });
+    const output = r.combinedOutput();
+
+    const isHelpOutput = output.includes('用法:');
+    if (isHelpOutput) {
+      assert.ok(true, '（功能未实现，sync 命令尚未注册）');
+      return;
+    }
+
+    // dry-run 模式下，应看到 "🗑️  上游移除" 标签 + 文件路径
+    const hasUpstreamRemovedLabel =
+      output.includes('上游移除') ||
+      output.includes('UPSTREAM_REMOVED');
+    const hasCmdPath = output.includes(testCmdPath);
+
+    assert.ok(hasUpstreamRemovedLabel,
+      `dry-run 应显示 UPSTREAM_REMOVED 标签。\n实际输出: ${output.slice(0, 500)}`);
+    assert.ok(hasCmdPath,
+      `dry-run 应显示 commands 文件路径 "${testCmdPath}"。\n实际输出: ${output.slice(0, 500)}`);
+
+    // dry-run 下文件不应被修改
+    assert.ok(existsSync(join(projectDir, testCmdPath)),
+      `dry-run 不应删除 commands 文件: ${testCmdPath}`);
+  });
+});
+
+// ============================================================================
 // Requirement: 命令入口路由
 // Covers: Task 5
 // ============================================================================

@@ -368,7 +368,6 @@ function cmd_init(targetPath) {
   // 创建目录结构
   const dirs = [
     '.cursor/agents',
-    '.cursor/commands',
     '.cursor/skills',
     '.cursor/hooks',
     'specline/changes/archive',
@@ -404,12 +403,11 @@ function cmd_init(targetPath) {
   }
 
   const agentsCount = countFiles(join(target, '.cursor', 'agents'));
-  const commandsCount = countFiles(join(target, '.cursor', 'commands'));
   const skillsCount = countFiles(join(target, '.cursor', 'skills'));
   const hooksCount = countFiles(join(target, '.cursor', 'hooks'));
 
   success('Specline 初始化完成');
-  log(`📁 文件: ${commandsCount} commands, ${skillsCount} skills, ${agentsCount} agents, ${hooksCount} hooks`);
+  log(`📁 文件: ${skillsCount} skills, ${agentsCount} agents, ${hooksCount} hooks`);
   log('');
   log('🚀 试试在 Cursor 中输入:');
   log('   /specline-pipeline "你的第一个需求"');

@@ -60,7 +60,17 @@ schema: spec-driven
 # - none:    All human gates are auto-approved (use with caution, primarily for CI/CD)
 
 
+
+
+
+
+
 pipeline:
   human_gate_policy: minimal
+
+
+
+
+
 
 
