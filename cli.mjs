@@ -5,6 +5,8 @@ import { join, dirname, resolve, relative, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { get } from 'https';
+import { execSync, spawnSync } from 'child_process';
+import { createInterface } from 'readline/promises';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(__dirname, 'templates');
@@ -455,7 +457,26 @@ function fetchLatestVersion() {
   });
 }
 
+/**
+ * 交互式确认提问：回车/Y/y/Yes/yes → true, N/n/No/no → false
+ * 非 TTY 环境直接返回 true（无人值守模式）
+ */
+async function askConfirm(question) {
+  if (!process.stdin.isTTY) return true;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(question + ' ');
+    const trimmed = answer.trim().toLowerCase();
+    return trimmed === '' || trimmed === 'y' || trimmed === 'yes';
+  } catch {
+    return false;
+  } finally {
+    rl.close();
+  }
+}
+
 async function cmd_update() {
+  // 1. 从 npm registry 获取最新版本
   let latest;
   try {
     latest = await fetchLatestVersion();
@@ -473,25 +494,60 @@ async function cmd_update() {
     process.exit(0);
   }
 
-  const currentParts = VERSION.split('.').map(Number);
-  const latestParts = latest.split('.').map(Number);
-
-  let isNewer = false;
-  for (let i = 0; i < 3; i++) {
-    const c = currentParts[i] || 0;
-    const l = latestParts[i] || 0;
-    if (l > c) {
-      isNewer = true;
-      break;
-    } else if (l < c) {
-      break;
-    }
+  // 2. 版本比较
+  if (compareVersions(VERSION, latest) >= 0) {
+    success('已是最新版本 (v' + VERSION + ')');
+    process.exit(0);
   }
 
-  if (isNewer) {
-    log('✨ 新版本可用: v' + latest + '（当前: v' + VERSION + '）\n运行 npm install -g specline@latest 更新');
-  } else {
-    success('已是最新版本 (v' + VERSION + ')');
+  // 3. 交互确认
+  log('✨ 新版本可用: v' + latest + '（当前: v' + VERSION + '）');
+
+  if (!process.stdin.isTTY) {
+    log('在非交互环境中无法自动升级，请手动执行: npm install -g specline@latest');
+    process.exit(0);
+  }
+
+  const proceed = await askConfirm('是否升级到 v' + latest + '？[Y/n]');
+  if (!proceed) {
+    log('已取消升级');
+    process.exit(0);
+  }
+
+  // 4. 执行 npm install -g specline@latest
+  log('正在升级 specline...');
+  try {
+    execSync('npm install -g specline@latest', { stdio: 'inherit' });
+  } catch (err) {
+    const stderr = (err.stderr || '').toString();
+    if (stderr.includes('EACCES') || stderr.includes('permission denied')) {
+      error('权限不足。请尝试：');
+      log('  sudo npm install -g specline@latest');
+      log('  或使用 Node 版本管理器（nvm / fnm / n）');
+    } else {
+      error('升级失败：' + (stderr || err.message));
+    }
+    process.exit(1);
+  }
+
+  success('已升级至 v' + latest);
+
+  // 5. 检测是否为 specline 项目，询问是否同步模板
+  const cwd = process.cwd();
+  const lockFile = join(cwd, 'specline', '.specline-lock.yaml');
+  if (existsSync(lockFile)) {
+    const doSync = await askConfirm('检测到 specline 项目，是否同步最新模板？[Y/n]');
+    if (doSync) {
+      log('正在同步模板文件...');
+      try {
+        const result = spawnSync('specline', ['sync'], { stdio: 'inherit' });
+        if (result.status !== 0) {
+          warn('模板同步失败（退出码: ' + result.status + '），请手动运行 specline sync');
+        }
+      } catch (err) {
+        warn('无法运行 specline sync：' + err.message);
+      }
+    }
   }
 
   process.exit(0);
