@@ -347,10 +347,10 @@ function cmd_init(targetPath) {
     process.exit(1);
   }
 
-  const configFile = join(target, '.specline-config.yaml');
+  const lockFile = join(target, 'specline', '.specline-lock.yaml');
   const forceMode = process.argv.includes('--force') || process.argv.includes('-f');
 
-  if (existsSync(configFile) && !forceMode) {
+  if (existsSync(lockFile) && !forceMode) {
     warn('Specline 已在此项目中初始化。使用 --force 强制覆盖。');
     process.exit(0);
   }
@@ -405,13 +405,6 @@ function cmd_init(targetPath) {
   const commandsCount = countFiles(join(target, '.cursor', 'commands'));
   const skillsCount = countFiles(join(target, '.cursor', 'skills'));
   const hooksCount = countFiles(join(target, '.cursor', 'hooks'));
-
-  // 写入初始化配置
-  const initConfig = `# Specline 项目配置
-version: "${VERSION}"
-initialized_at: "${new Date().toISOString()}"
-`;
-  writeFileSync(configFile, initConfig, 'utf-8');
 
   success('Specline 初始化完成');
   log(`📁 文件: ${commandsCount} commands, ${skillsCount} skills, ${agentsCount} agents, ${hooksCount} hooks`);
@@ -509,10 +502,19 @@ function cmd_sync({ dryRun, targetPath }) {
   const target = resolve(cwd, targetPath || '.');
 
   // 1. 检查项目是否已初始化
-  const configFile = join(target, '.specline-config.yaml');
-  if (!existsSync(configFile)) {
-    error('未检测到 Specline 项目，请先运行 specline init');
-    process.exit(1);
+  const lockFile = join(target, 'specline', '.specline-lock.yaml');
+  if (!existsSync(lockFile)) {
+    // 向后兼容：检查旧版 .specline-config.yaml
+    const oldMarker = join(target, '.specline-config.yaml');
+    if (existsSync(oldMarker)) {
+      warn('检测到旧版项目，正在自动迁移...');
+      const lockData = buildLockData(target, target);
+      writeLockFile(target, lockData);
+      success('已从旧版项目迁移，生成了锁文件');
+    } else {
+      error('未检测到 Specline 项目，请先运行 specline init');
+      process.exit(1);
+    }
   }
 
   // 2. 构建上游模板哈希映射
@@ -545,10 +547,6 @@ function cmd_sync({ dryRun, targetPath }) {
   // 6. 分类
   const results = [];
   for (const path of allPaths) {
-    if (path === '.specline-config.yaml') {
-      // 项目标识文件，由 specline init 生成（含时间戳），sync 不覆盖
-      continue;
-    }
     const templateHash = upstreamFiles.get(path) || null;
     const lockEntry = lockData ? (lockData.files.get(path) || null) : null;
     const projectPath = join(target, path);

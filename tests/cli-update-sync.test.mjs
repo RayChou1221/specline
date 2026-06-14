@@ -191,12 +191,6 @@ function initTestProject(opts = {}) {
   const projectDir = join(tmpDir, 'test-project');
   mkdirSync(projectDir, { recursive: true });
 
-  // 创建 .specline-config.yaml 满足 init 前置条件
-  writeFileSync(
-    join(projectDir, '.specline-config.yaml'),
-    'project_name: test-project\n'
-  );
-
   // 执行 specline init（默认使用 --force 确保模板复制和锁文件生成）
   const useForce = opts.force !== false;
   const initArgs = ['init', projectDir];
