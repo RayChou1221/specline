@@ -88,11 +88,13 @@ function writeLockFile(projectDir, lockData) {
 }
 
 /**
- * 遍历 TEMPLATES_DIR 所有文件，构建锁数据结构
+ * 遍历指定目录所有文件，构建锁数据结构
+ * rootDir: 要遍历的根目录（必须是目标项目目录，这样 init 后锁哈希与实际文件一致）
  * 返回 { version, synced_at, files: Map<string, string> }
  */
-function buildLockData(projectDir) {
+function buildLockData(projectDir, rootDir) {
   const files = new Map();
+  const walkRoot = rootDir || TEMPLATES_DIR;
 
   function walk(dir, base) {
     const entries = readdirSync(dir, { withFileTypes: true });
@@ -107,7 +109,7 @@ function buildLockData(projectDir) {
     }
   }
 
-  walk(TEMPLATES_DIR, '');
+  walk(walkRoot, '');
 
   return {
     version: VERSION,
@@ -423,7 +425,7 @@ initialized_at: "${new Date().toISOString()}"
   if (existsSync(lockPath) && !forceMode) {
     warn('锁文件已存在，跳过');
   } else {
-    const lockData = buildLockData(target);
+    const lockData = buildLockData(target, target);
     writeLockFile(target, lockData);
     success('已生成锁文件');
   }
@@ -521,20 +523,14 @@ function cmd_sync({ dryRun, targetPath }) {
   const lockData = readLockFile(target);
 
   // 4. 版本校验
-  if (lockData) {
-    if (lockData.version === VERSION) {
-      success('项目模板已与 CLI 版本同步 (v' + VERSION + ')');
-      process.exit(0);
-    }
-    if (compareVersions(lockData.version, VERSION) > 0) {
-      warn('锁文件版本 (v' + lockData.version + ') 高于 CLI 版本 (v' + VERSION + ')，继续同步可能导致问题');
-      if (!process.stdin.isTTY) {
-        error('非交互式环境，已跳过同步');
-        process.exit(1);
-      }
-      error('锁文件版本高于 CLI，请先更新 CLI');
+  if (lockData && compareVersions(lockData.version, VERSION) > 0) {
+    warn('锁文件版本 (v' + lockData.version + ') 高于 CLI 版本 (v' + VERSION + ')，继续同步可能导致问题');
+    if (!process.stdin.isTTY) {
+      error('非交互式环境，已跳过同步');
       process.exit(1);
     }
+    error('锁文件版本高于 CLI，请先更新 CLI');
+    process.exit(1);
   }
 
   // 5. 收集所有需要分类的路径
@@ -549,6 +545,10 @@ function cmd_sync({ dryRun, targetPath }) {
   // 6. 分类
   const results = [];
   for (const path of allPaths) {
+    if (path === '.specline-config.yaml') {
+      // 项目标识文件，由 specline init 生成（含时间戳），sync 不覆盖
+      continue;
+    }
     const templateHash = upstreamFiles.get(path) || null;
     const lockEntry = lockData ? (lockData.files.get(path) || null) : null;
     const projectPath = join(target, path);
@@ -621,7 +621,8 @@ function cmd_sync({ dryRun, targetPath }) {
       const labels = { NEW: '➕ 新增', WILL_UPDATE: '🔄 更新', CONFLICT: '⚠️  冲突（将备份后覆盖）', NO_LOCK_CONFLICT: '⚠️  无锁记录', UPSTREAM_REMOVED: '🗑️  上游移除' };
       log(labels[r.type] + '  ' + r.path);
     }
-    if (stats.newCount === 0 && stats.updated === 0 && stats.conflicted === 0 && stats.upstreamRemoved === 0) {
+    if (stats.newCount === 0 && stats.updated === 0 && stats.conflicted === 0
+        && stats.skippedModified === 0 && stats.upstreamRemoved === 0) {
       log('所有模板文件已是最新，无需同步');
     } else {
       log('\n以上为预览，未实际执行。去掉 --dry-run 以执行同步。');
@@ -718,9 +719,10 @@ function cmd_sync({ dryRun, targetPath }) {
   });
 
   // 11. 输出摘要
-  if (stats.newCount === 0 && stats.updated === 0 && stats.conflicted === 0 && stats.upstreamRemoved === 0
+  if (stats.newCount === 0 && stats.updated === 0 && stats.conflicted === 0
+      && stats.skippedModified === 0 && stats.upstreamRemoved === 0
       && !mergeStats.hooksMerged && !mergeStats.configUpdated) {
-    log('所有模板文件已是最新，无需同步');
+    success('项目模板已是最新，无需同步 (v' + VERSION + ')');
   } else {
     log('📊 同步摘要：');
     log('   总模板文件: ' + allPaths.size);
