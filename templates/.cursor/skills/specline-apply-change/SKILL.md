@@ -162,6 +162,32 @@ What would you like to do?
 - Use contextFiles from CLI output, don't assume specific file names
 - **Hook blocked → no silent fallback**: If this skill is invoked because a coding subagent (specline-frontend-dev / specline-backend-dev) was blocked by a hook, you MUST first notify the user of the blocking cause and attempt diagnosis. Do not silently execute tasks that should have been handled by the blocked subagent. Reference the Hook Blocking Resolution Protocol in the specline-pipeline skill.
 
+---
+
+## Anti-Rationalization 表格
+
+逐任务实现时，Agent 容易偏离规范：
+
+| 借口 | 现实 |
+|------|------|
+| "不用读 Spec/Design/Tasks，我理解需求" | 记忆不可靠。实现前读上下文文件是防止方向偏离的最便宜保险。 |
+| "顺便把这个相邻函数也重构了" | Scope Discipline 是 Core Behaviors。越界修改让 Code Review 和回溯都变困难。 |
+| "checkbox 我最后一起标记" | Checkbox 是断点续跑的唯一信号源。不及时标记意味着下次恢复时状态丢失。 |
+| "这个任务没有测试也没关系，下一个任务会补" | 每个 Testable=true 的任务必须产出测试。推迟 = 不写。 |
+| "tasks.md 的 Covers 追溯链我不用管，代码写对就行" | Covers 链是 Spec → Code 的可追溯纽带。不维护它，Code Review 和测试失败定位都失去锚点。 |
+
+## Verification Checklist
+
+每完成一个任务后自查，全部完成后终查：
+
+- [ ] 开始前已读 proposal.md / spec.md / design.md / tasks.md
+- [ ] 每个任务的实现范围未超出 Files 声明
+- [ ] 每个 Testable=true 的任务产出了测试文件（在 tests/unit/ 或 tests/models/）
+- [ ] tasks.md 中每个已完成任务的 `[ ]` 已改为 `[x]`
+- [ ] task-{id}-result.json 已写入 .tmp/ 目录
+- [ ] 本 session 修改的文件与 tasks.md 的 Files 声明一致
+- [ ] 未修改其他任务负责的文件
+
 ### 暂停场景处理
 
 当实现过程中出现以下情况时，暂停并等待用户指引：

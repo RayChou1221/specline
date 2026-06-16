@@ -147,3 +147,27 @@ All artifacts complete. All tasks complete.
 - Show clear summary of what happened
 - If sync is requested, use specline-sync-specs approach (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
+
+---
+
+## Anti-Rationalization 表格
+
+归档是流水线的最后一步，松懈的代价是污染长期记录：
+
+| 借口 | 现实 |
+|------|------|
+| "不用检查完成度，反正用户说可以归档了" | 用户说可以不代表真的可以。Artifact 和 task 完成度检查是归档前的最后防线。 |
+| "Delta spec 不用同步，下次再说" | 未同步的 Delta spec 意味着 spec 与代码脱节。归档后几乎不会再有人回来补。 |
+| "归档就是移动目录，不需要通知用户" | 归档改变了 change 的可见性和可修改性。用户需要知道发生了什么。 |
+| "警告不用管，自动继续就行" | 警告（artifact 不完整、task 未完成）是信号。归档时应确认而非忽略。 |
+
+## Verification Checklist
+
+归档前自查：
+
+- [ ] Artifact 完成度已检查（`specline-pipeline-gate.sh artifacts --json`）
+- [ ] Task 完成度已检查（tasks.md checkbox 状态）
+- [ ] 任何警告/不完整项已向用户确认
+- [ ] Delta spec sync 决策已完成（存在则展示摘要→询问；不存在则跳过）
+- [ ] 归档目录已创建（`specline/changes/archive/YYYY-MM-DD-<name>/`）
+- [ ] 归档摘要已展示给用户

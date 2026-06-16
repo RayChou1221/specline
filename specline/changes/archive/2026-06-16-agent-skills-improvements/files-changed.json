@@ -1,0 +1,14 @@
+{
+  "files": [
+    "templates/.cursor/skills/specline-pipeline/SKILL.md",
+    "templates/.cursor/skills/specline-explore/SKILL.md",
+    "templates/.cursor/skills/specline-propose/SKILL.md",
+    "templates/.cursor/skills/specline-quickfix/SKILL.md",
+    "templates/.cursor/skills/specline-apply-change/SKILL.md",
+    "templates/.cursor/skills/specline-archive-change/SKILL.md",
+    "templates/.cursor/skills/specline-pipeline/templates/subagent-prompts.md",
+    "templates/.cursor/agents/specline-code-reviewer.md"
+  ],
+  "change_count": 8,
+  "description": "借鉴 agent-skills 项目，为 Specline 全部技能增加 Anti-Rationalization、Verification Checklist、Core Operating Behaviors、上下文信任分级、敌对审查姿态"
+}

@@ -55,7 +55,13 @@ specline-pipeline-gate.sh new --change "<name>"
 
 **每个 Artifact 的创建规则**：
 
-- **proposal.md**：描述 What（做什么）/ Why（为什么做）/ Scope（包含和不包含的范围）/ Impact（影响哪些系统）
+- **proposal.md**：描述 What（做什么）/ Why（为什么做）以及以下两段（必须显式分开）：
+
+  **## In Scope**（做什么）：明确功能范围、涉及的系统/模块、目标用户
+  
+  **## Out of Scope**（不做什么）：明确排除哪些功能/场景以及排除理由。**这是提案中最有价值的部分之一**——一半的返工源于对"不做什么"的沉默分歧。明确 Out of Scope 防止需求蔓延，也保护了 In Scope 的交付承诺。
+
+  还包括：Impact（影响哪些系统）
 
 - **spec.md**：H1 标题含 "Specification"，包含 `## Purpose` 和 `## Requirements`，每个 Requirement 至少 1 个 Scenario，每个 Scenario 含 `**WHEN**`/`**THEN**` 配对，至少覆盖 Happy Path 和 1 个异常场景
 
@@ -153,3 +159,28 @@ specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」
 - 需求不明确时用结构化提问（AskUserQuestion）澄清
 - 优先做出合理判断保持节奏，只在关键不清时询问
 - **Hook 阻断不降级**：如果本 Skill 因 `specline-spec-creator` 子 Agent 被 hook 阻止而作为降级方案被调用，必须首先通知用户阻断原因，并尝试诊断修复（参考 specline-pipeline SKILL 中的 Hook 阻断处理规范）。不得在 hook 问题未解决时静默直接执行
+
+---
+
+## Anti-Rationalization 表格
+
+生成 Spec 规划文件时，Agent 容易找借口跳过关键步骤：
+
+| 借口 | 现实 |
+|------|------|
+| "需求很明确，不需要 proposal.md" | 明确的只是你脑子里的假设。Proposal 的作用是让这些假设显式化，供他人审视。 |
+| "Scope 就是隐含的，不用写那么细" | 一半的返工源于对"不做什么"的沉默分歧。Out of Scope 是提案中最有价值的部分。 |
+| "任务拆解是多余的，我能直接做" | 不拆解就无法并行、无法断点续跑、无法追溯。10 分钟的拆解省下 2 小时的重做。 |
+| "并行度 50% 够了，不用追求 60%" | 60% 不是硬指标，但 <50% 意味着功能边界划分不合理——大概率任务之间耦合太紧。 |
+| "测试文件归属表格我后面补" | 补的从来不会补。没有归属表格，coding agent 和 test-writer 会踩到对方的文件。 |
+
+## Verification Checklist
+
+生成 Spec 规划文件后，自查：
+
+- [ ] proposal.md 包含：What / Why / In Scope / Out of Scope（两段显式分开）/ Impact
+- [ ] spec.md 包含：Purpose + Requirements，每个 Requirement ≥1 Scenario（含 WHEN/THEN），Happy Path + 至少 1 个异常场景
+- [ ] design.md 包含：Architecture、Key Design Decisions（理由+替代方案）、Data Flow、组件交互
+- [ ] tasks.md 每个任务标注完整（Type/Depends/Covers/Testable/Files），Depends: (none) 占比 ≥ 60%，第 1 批次 Files 无重叠
+- [ ] 测试文件归属表格存在：单元测试归属 coding agent，集成/E2E 归属 test-writer
+- [ ] `specline-pipeline-gate.sh artifacts --json` 确认 4 个文件齐全
