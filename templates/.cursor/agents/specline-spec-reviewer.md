@@ -33,6 +33,7 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
    - 是否说明了选择的架构模式
    - 是否包含关键数据流/组件交互描述
    - 是否说明了技术选型（框架、库、数据库等）
+   - 是否包含 Architecture Impact Analysis 章节（缺失 → error，status rejected）
 
 2. **一致性**：
    - 技术决策是否与 spec.md 中的需求对齐
@@ -41,6 +42,20 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
 3. **合理性**：
    - 技术选型是否有明显不合理之处（如选择不符合项目现有技术栈的组件）
    - 是否存在过度设计或设计不足
+
+4. **架构分析合理性**（新增）：
+   - 侵入点分析是否合理 — 过度侵入核心模块但未给出充分理由 → error
+   - 模块边界划分是否与项目现有结构一致 — 冲突 → error
+   - 依赖方向是否符合分层规则 — 违规 → error
+   - 数据影响分析是否遗漏关键波及面（如未提及缓存失效、索引影响）→ error
+   - 接口兼容性分析是否覆盖所有变更端点 — 遗漏 → error
+   - 置信度标记是否诚实 — 推断却标 ✅ → error
+   - **以上任意 error → status rejected，打回要求重新修订 Spec 方案**
+
+5. **与现有系统一致性**（新增）：
+   - 新增设计模式是否与项目已有约定冲突 — 冲突 → error
+   - 技术选型是否与项目现有技术栈不兼容 — 不兼容 → error
+   - **以上任意 error → status rejected**
 
 ### C. tasks.md 审核（新增）
 
@@ -108,6 +123,9 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
     "[tasks.md] 任务 1 和 任务 2 的 Files 有交集：都包含了 src/utils/api.ts",
     "[tasks.md] 任务 3 Testable=true 但存在上游依赖 (Depends: 1)，应为 false",
     "[tasks.md] 任务 5 (Depends: none, Type: backend) 建议标记为 Testable: true",
+    "[design.md] 架构分析缺失：缺少 Architecture Impact Analysis 章节",
+    "[design.md] 依赖方向违规：billing service 直接引用 controllers/，但项目分层规则禁止服务层引用控制器层",
+    "[design.md] 置信度造假：侵入点分析标注 ✅ 但项目无显式架构文档，应为 ⚠️",
     "[design.md] 提到使用 Redis 缓存，但 tasks.md 中没有对应的 infra 任务",
     "[coverage] Scenario '用户登出' 未被任何任务覆盖"
   ],
@@ -119,7 +137,8 @@ description: 审核 spec.md、design.md、tasks.md 的完整性和一致性。�
 
 ## 审核标准
 
-- status 为 "approved" 当且仅当所有维度通过（不含 warning 级问题）
+- status 为 "rejected" 当存在任何 error 级问题（包括架构分析缺失、依赖方向违规、置信度造假等架构相关 error）
+- status 为 "approved" 当且仅当所有维度通过（不含 error 级问题，不含 warning 级问题）
 - feedback 中每个问题一行，以 `[文件] ` 前缀标记范围
 - coverage 统计哪些 Requirement/Scenario 已被 tasks.md 的 Covers 标注覆盖
-- 即使是 approved，也可以有轻微的 feedback 建议（非阻塞性）
+- 架构相关 error（design.md 审核维度 4-5）与 Spec Gate 中的其他 error 同等对待——直接导致 rejected，打回要求重新修订 Spec 方案

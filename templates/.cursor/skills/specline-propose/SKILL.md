@@ -65,7 +65,7 @@ specline-pipeline-gate.sh new --change "<name>"
 
 - **spec.md**：H1 标题含 "Specification"，包含 `## Purpose` 和 `## Requirements`，每个 Requirement 至少 1 个 Scenario，每个 Scenario 含 `**WHEN**`/`**THEN**` 配对，至少覆盖 Happy Path 和 1 个异常场景
 
-- **design.md**：包含 Architecture、Key Design Decisions（每项说明选择理由和替代方案）、Data Flow、组件/模块交互
+- **design.md**：包含 Architecture Overview、Key Design Decisions（每项说明选择理由和替代方案）、Data Flow、Component Interaction、**Architecture Impact Analysis**（侵入点/模块边界/依赖方向/数据影响/接口兼容性分析，每项标注置信度 ✅/⚠️）
 
 - **tasks.md**：每个任务必须标注：
   - **Type**: frontend | backend | infra | db | config | docs
@@ -180,7 +180,7 @@ specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」
 
 - [ ] proposal.md 包含：What / Why / In Scope / Out of Scope（两段显式分开）/ Impact
 - [ ] spec.md 包含：Purpose + Requirements，每个 Requirement ≥1 Scenario（含 WHEN/THEN），Happy Path + 至少 1 个异常场景
-- [ ] design.md 包含：Architecture、Key Design Decisions（理由+替代方案）、Data Flow、组件交互
+- [ ] design.md 包含：Architecture Overview、Key Design Decisions（理由+替代方案）、Data Flow、Component Interaction、**Architecture Impact Analysis**（侵入点/模块边界/依赖方向/数据影响/接口兼容性，每项带置信度 ✅/⚠️）
 - [ ] tasks.md 每个任务标注完整（Type/Depends/Covers/Testable/Files），Depends: (none) 占比 ≥ 60%，第 1 批次 Files 无重叠
 - [ ] 测试文件归属表格存在：单元测试归属 coding agent，集成/E2E 归属 test-writer
 - [ ] `specline-pipeline-gate.sh artifacts --json` 确认 4 个文件齐全

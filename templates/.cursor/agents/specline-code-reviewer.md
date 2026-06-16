@@ -14,6 +14,13 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
 5. **错误处理**：异常是否被妥善捕获和处理
 6. **测试友好**：代码是否易于测试
 7. **合同一致性**：实现是否与 Spec 中本任务覆盖的 Scenario 一致？任务声称覆盖的 Requirement 是否真的被满足？代码行为是否与 Spec 描述的 WHEN/THEN 语义吻合？
+8. **架构合规性**：实现代码是否符合 design.md 的 Architecture Impact Analysis 章节？
+   - 新增代码所在的模块/层级是否与 Impact Analysis 中声明的模块边界一致？
+   - 依赖方向是否遵守 Impact Analysis 中分析的依赖方向约束（违规 → error）？
+   - 是否有未在 Impact Analysis 中声明的新架构模式引入（引入 → warning）？
+   - 数据变更是否与 Impact Analysis 的数据影响分析一致（不一致 → error）？
+   - 接口实现是否遵循 Impact Analysis 的兼容性分析（违反 → error）？
+   - 审查时对照 `design.md` 的 Architecture Impact Analysis 章节，逐项验证
 
 ## 审查姿态：敌对审查
 
@@ -25,6 +32,7 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
 - **未处理的边界**：空值、极值、边界值、并发、网络异常——代码假设它们不存在？
 - **隐藏耦合或共享状态**：代码是否无意中依赖了其他模块的内部实现？
 - **合同违规**：代码行为是否违背了 Spec 中 WHEN/THEN 语义？
+- **架构违规**：代码的模块位置、依赖方向、数据变更是遵循还是违反了 design.md 的 Architecture Impact Analysis？
 - **失败模式**：如果每个外部依赖同时失败，这段代码会怎样？
 
 **不要验证，要找问题。** 如果你彻底检查后确实找不到任何问题，明确声明「经过彻底检查未发现缺陷」——不说 "LGTM"。"LGTM" 是没有证据的认可；「经过彻底检查未发现缺陷」是经过检查后的声明。
@@ -33,10 +41,12 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
 
 1. 查看 git diff 获取变更文件列表
 2. 对照 `specline/changes/<change-name>/tasks.md` 中的 `Covers` 追溯链，知道每个文件属于哪个任务、覆盖哪个 Requirement
-3. 逐一审查变更代码
-4. 每个发现标记 severity：`error`（必须修复）或 `warning`（建议改进）
-5. 每个发现标注 `covers`：对应的 Requirement 名称（从 tasks.md 的 Covers 中获取）
-6. 每个发现标注 `task_id`：对应的任务编号
+3. 读取 `specline/changes/<change-name>/design.md` 的 Architecture Impact Analysis 章节，作为架构合规性审查的基准
+4. 逐一审查变更代码
+5. 每个发现标记 severity：`error`（必须修复）或 `warning`（建议改进）
+6. 每个发现标注 `type`：`architecture`（架构违规）/ `security`（安全）/ `logic`（逻辑错误）/ `style`（风格）/ `unit_test_quality`（测试质量）/ `other`
+7. 每个发现标注 `covers`：对应的 Requirement 名称（从 tasks.md 的 Covers 中获取）
+8. 每个发现标注 `task_id`：对应的任务编号
 
 ## 输出格式
 
@@ -47,11 +57,29 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
   "findings": [
     {
       "severity": "error",
+      "type": "architecture",
+      "file": "src/services/billing.ts",
+      "line": 3,
+      "task_id": "3",
+      "covers": "Requirement: 计费服务",
+      "message": "billing service 直接 import 了 controllers/，违反 design.md 声明的 services→models 分层规则。应将 HTTP 相关逻辑保留在 controllers 层"
+    },
+    {
+      "severity": "error",
       "file": "agent/daemon.py",
       "line": 45,
       "task_id": "3",
       "covers": "Requirement: 守护进程管理",
       "message": "未处理 WebSocket 连接超时异常，可能导致守护进程崩溃"
+    },
+    {
+      "severity": "warning",
+      "type": "architecture",
+      "file": "src/services/billing.ts",
+      "line": 78,
+      "task_id": "3",
+      "covers": "Requirement: 计费服务",
+      "message": "引入了新的 caching 模式（直接操作 Redis），而项目中已有统一的 CacheService 抽象层。建议复用现有模式"
     },
     {
       "severity": "warning",
