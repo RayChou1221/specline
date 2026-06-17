@@ -14,6 +14,12 @@
 /specline-quickfix "修复登录按钮样式"
 ```
 
+整理面向 AI 的项目知识库？一个命令搞定：
+
+```
+/specline-knowledge
+```
+
 ## 它能做什么
 
 **完整流水线**（新功能、重构）：
@@ -46,6 +52,7 @@
 - **人机协作**：3 个人工检查点——Spec 确认、Review 可选复核、归档确认，支持 `full`/`minimal`/`none` 三级自动化策略配置（`specline/config.yaml` 中 `pipeline.human_gate_policy`）
 - **Hook 约束体系**：sessionStart 注入 pipeline 上下文 → preToolUse 违规拦截 → postToolUse 操作后提醒，确保长对话中 Agent 不偏离流水线逻辑
 - **安全 Hook**：自动拦截危险 Shell 命令（如 `rm -rf`、`curl|bash`）+ 代码变更后自动格式化
+- **AI 知识库**：`/specline-knowledge` 自动检测、生成、更新六类项目知识文件（术语表/架构/约定/决策/参考/操作指南），让 AI agent 始终有最新的项目上下文
 - **零外部依赖**：不依赖 OpenSpec CLI，全部功能自包含
 
 ## 快速开始
@@ -74,13 +81,13 @@ specline sync --dry-run    # 预览变更
 ```
 my-project/
 ├── .cursor/
-│   ├── agents/          ← 9 个 Specline Agent 定义
-│   ├── commands/        ← 3 个 Slash 命令入口
-│   ├── skills/          ← 6 个 Skill 指令
-│   │   └── specline-pipeline/
-│   │       ├── SKILL.md         ← 核心编排指令（~500 行）
-│   │       ├── templates/       ← 子 Agent prompt 模板
-│   │       └── references/      ← Schema / 事件日志 / 约束参考文档
+│   ├── agents/          ← 10 个 Specline Agent 定义
+│   ├── skills/          ← 7 个 Skill 指令
+│   │   ├── specline-pipeline/
+│   │   │   ├── SKILL.md         ← 核心编排指令（~500 行）
+│   │   │   ├── templates/       ← 子 Agent prompt 模板
+│   │   │   └── references/      ← Schema / 事件日志 / 约束参考文档
+│   │   └── specline-knowledge/  ← AI 知识库管理
 │   ├── hooks/           ← 7 个 Gate/Hook 脚本
 │   └── hooks.json       ← Cursor Hook 配置
 ├── specline/            ← 运行时目录
@@ -88,7 +95,9 @@ my-project/
 │   ├── changes/         ← 变更目录
 │   │   └── archive/     ← 归档目录
 │   └── specs/           ← 主规格目录
-└── .specline-config.yaml
+├── docs/
+│   └── knowledge/       ← AI 知识库文件（术语表/架构/约定/...）
+└── AGENTS.md            ← 知识库入口（由 /specline-knowledge 管理）
 ```
 
 然后在 Cursor 中输入：
@@ -107,6 +116,12 @@ my-project/
 
 ```
 /specline-explore
+```
+
+让 AI 理解你的项目：
+
+```
+/specline-knowledge
 ```
 
 ## 工作流选择
@@ -215,9 +230,15 @@ specline-pipeline SKILL  ← 编排层                 编排者直接执行（�
     │
 ┌───┼──────────────────┬──────────────────────┐
 ▼   ▼                  ▼                      ▼
-9 个子 Agent      specline-pipeline-     Cursor Hooks
+10 个子 Agent     specline-pipeline-     Cursor Hooks
 （创造性工作）      gate.sh              （安全网 + 约束）
                   （确定性门禁）
+
+/specline-knowledge        ← AI 知识库管理（独立触发）
+    │
+    ▼
+AGENTS.md → docs/knowledge/
+检测入口 → 解析引用 → AI 判断新鲜度 → 按需生成 6 类知识文件
 ```
 
 ## CLI 命令
@@ -243,6 +264,19 @@ specline-pipeline SKILL  ← 编排层                 编排者直接执行（�
 | `specline-config-reviewer` | Shell 脚本安全性、配置文件语法和一致性、Markdown 文档结构审查 |
 | `specline-test-writer` | 黑盒测试编写——只能看 Spec 不能读源码，仅写集成测试（tests/integration/）和 E2E 测试 |
 | `specline-test-runner` | 执行测试并分类失败原因（测试问题/代码问题/Spec 模糊），区分单元测试（回 coding agent）和集成/E2E 测试（回 test-writer） |
+| `specline-explore-assistant` | 辅助 Explore 技能进行设计压力测试——以不带上下文偏见的新鲜视角审视探索结论 |
+
+## Skills 列表
+
+| Skill | 入口 | 说明 |
+|-------|------|------|
+| `specline-pipeline` | `/specline-pipeline <需求>` | 完整开发流水线编排 |
+| `specline-quickfix` | `/specline-quickfix <描述>` | 轻量修复（1-3 文件） |
+| `specline-propose` | 由 pipeline 调度 | 生成 Spec 规划文件 |
+| `specline-apply-change` | 由 pipeline 调度 | 执行 tasks.md 中的任务 |
+| `specline-explore` | `/specline-explore` | 探索模式，思考伙伴 |
+| `specline-archive-change` | 由 pipeline 调度 | 归档完成的 Change |
+| `specline-knowledge` | `/specline-knowledge` | AI 知识库管理（检测/生成/更新六类知识文件） |
 
 ## 确定性门禁
 

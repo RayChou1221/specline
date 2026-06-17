@@ -47,6 +47,7 @@ description: 执行测试并分析失败原因。语言无关，自动检测项�
 |---------|---------|---------|-----------|
 | `test_bug` | 测试逻辑/断言写错了 | test-writer 修改测试代码 | 自动循环（最多 2 次） |
 | `impl_bug` | 实现代码行为不符合 Spec | coding agent 修改实现代码 | 用 Covers 追溯链定位任务后自动修复 |
+| `contract_mismatch` | 实现代码的对外接口与 design.md 契约不一致（如 HTTP 路径/方法不匹配、CLI 参数签名不匹配、模块导出命名不一致） | coding agent 按契约修正代码；若契约本身有问题则回 spec-creator 修正 design.md | 优先回 coding agent 修复（最多 2 次）；若 2 次后仍不一致，暂停并报告用户确认以 design.md 为准还是以代码为准 |
 | `env_issue` | 测试环境/依赖问题（如测试框架未安装） | 检查环境配置 | 暂停，告知用户 |
 | `spec_ambiguity` | Spec 描述模糊导致理解偏差 | 需要人工澄清 | **暂停流水线，等待用户确认** |
 
@@ -84,6 +85,14 @@ description: 执行测试并分析失败原因。语言无关，自动检测项�
       "reason": "CLI 未对无效 task 文件进行校验，应返回 exit code 1"
     },
     {
+      "test": "tests/integration/test_users_api.py > test_create_user_returns_201",
+      "error": "HTTPError: 404 Client Error for url: /api/users",
+      "classification": "contract_mismatch",
+      "task_id": "1",
+      "covers": "Requirement: 用户注册, Scenario: 成功注册",
+      "reason": "接口契约定义 POST /api/users，但实现代码注册在 POST /api/accounts/register。测试按契约调用 /api/users 收到 404"
+    },
+    {
       "test": "tests/api.test.ts > Session persistence after restart",
       "error": "Expected session stored in Redis but stored in memory",
       "classification": "spec_ambiguity",
@@ -91,7 +100,7 @@ description: 执行测试并分析失败原因。语言无关，自动检测项�
     }
   ],
   "recommendation": "fix_impl",
-  "detail": "3 个失败中 2 个为实现代码问题（任务 2），1 个为 spec 模糊需人工澄清"
+  "detail": "4 个失败中 2 个为实现代码问题（任务 2），1 个为契约不一致（任务 1），1 个为 spec 模糊需人工澄清"
 }
 ```
 

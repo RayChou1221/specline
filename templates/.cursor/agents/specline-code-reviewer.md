@@ -14,6 +14,11 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
 5. **错误处理**：异常是否被妥善捕获和处理
 6. **测试友好**：代码是否易于测试
 7. **合同一致性**：实现是否与 Spec 中本任务覆盖的 Scenario 一致？任务声称覆盖的 Requirement 是否真的被满足？代码行为是否与 Spec 描述的 WHEN/THEN 语义吻合？
+8. **契约一致性**（新增）：若 `design.md` 包含「对外接口契约」章节，检查实现代码是否与契约一致：
+   - CLI 命令：命令名是否注册？参数签名是否匹配？
+   - HTTP 端点：路径是否被注册？请求/响应格式是否匹配？
+   - 模块导出：导出符号是否存在？函数签名是否匹配？
+   - 契约偏离标记为 `contract_mismatch`，severity 为 `error`（阻断）
 8. **架构合规性**：实现代码是否符合 design.md 的 Architecture Impact Analysis 章节？
    - 新增代码所在的模块/层级是否与 Impact Analysis 中声明的模块边界一致？
    - 依赖方向是否遵守 Impact Analysis 中分析的依赖方向约束（违规 → error）？
@@ -41,10 +46,12 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
 
 1. 查看 git diff 获取变更文件列表
 2. 对照 `specline/changes/<change-name>/tasks.md` 中的 `Covers` 追溯链，知道每个文件属于哪个任务、覆盖哪个 Requirement
-3. 读取 `specline/changes/<change-name>/design.md` 的 Architecture Impact Analysis 章节，作为架构合规性审查的基准
+3. 读取 `specline/changes/<change-name>/design.md`：
+   - Architecture Impact Analysis 章节，作为架构合规性审查的基准
+   - 如果存在「对外接口契约」章节，作为契约一致性审查的基准
 4. 逐一审查变更代码
 5. 每个发现标记 severity：`error`（必须修复）或 `warning`（建议改进）
-6. 每个发现标注 `type`：`architecture`（架构违规）/ `security`（安全）/ `logic`（逻辑错误）/ `style`（风格）/ `unit_test_quality`（测试质量）/ `other`
+6. 每个发现标注 `type`：`contract_mismatch`（契约不一致）/ `architecture`（架构违规）/ `security`（安全）/ `logic`（逻辑错误）/ `style`（风格）/ `unit_test_quality`（测试质量）/ `other`
 7. 每个发现标注 `covers`：对应的 Requirement 名称（从 tasks.md 的 Covers 中获取）
 8. 每个发现标注 `task_id`：对应的任务编号
 
@@ -55,6 +62,15 @@ description: 审查代码变更的质量、安全性和最佳实践。产出结�
 ```json
 {
   "findings": [
+    {
+      "severity": "error",
+      "type": "contract_mismatch",
+      "file": "src/routes/users.ts",
+      "line": 15,
+      "task_id": "2",
+      "covers": "Requirement: 用户注册",
+      "message": "HTTP 端点路径与契约不一致：契约定义为 POST /api/users，实际实现为 POST /api/accounts/register。请修正为契约定义的路径"
+    },
     {
       "severity": "error",
       "type": "architecture",

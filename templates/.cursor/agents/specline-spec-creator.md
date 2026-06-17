@@ -198,7 +198,52 @@ specline-pipeline-gate.sh new --change "<change-name>"
 - 置信度：✅/⚠️
 ```
 
-> **无架构文档时的尾部补充**：若 Step 1.5 未发现任何显式架构文档，在 Architecture Impact Analysis 章节末尾追加：
+#### Step 5.5: 判断是否需要对外接口契约
+
+在生成完整的 design.md 之后，检查 tasks.md 是否需要对外接口契约：
+
+**判断逻辑**（以 tasks.md 为决策源头）：
+- 扫描 tasks.md 中所有任务的 Type 标注
+- 如果存在 `Type: frontend`、`Type: backend`、`Type: infra`、`Type: db` 且该任务 `Testable: true`（或未标注 Testable 但 tasks.md 末尾「测试文件归属」表格中标注了 specline-test-writer 负责的集成/E2E 测试）→ **需要生成契约章节**
+- 如果所有任务均为 `Type: config` 或 `Type: docs`，或虽有 code 任务但均无 test-writer 负责的测试 → **跳过契约章节**
+
+若需要契约，在 design.md 的 Architecture Impact Analysis 章节之后追加「对外接口契约」章节：
+
+```markdown
+## 对外接口契约 (External Interface Contract)
+
+> 此章节为黑盒测试（specline-test-writer）提供对外接口定义。
+> Test-Writer 据此编写集成/E2E 测试，不读取任何实现源码。
+> Coding Agent 必须按此契约实现对外接口。
+
+### CLI 命令
+
+| 命令 | 格式 | 参数 | 输出 | 退出码 |
+|------|------|------|------|--------|
+| <命令名> | `<CLI调用格式>` | <参数名>: <类型> (描述) | stdout: <输出描述> | 0=成功, 1=失败 |
+
+### HTTP 端点
+
+| 方法 | 路径 | 请求体/参数 | 成功响应 | 错误响应 |
+|------|------|------------|----------|----------|
+| <方法> | <路径> | `<请求格式描述>` | <状态码> + `<响应体>` | <状态码> `{ "error": "<消息>" }` |
+
+### 模块导出
+
+| 模块文件 | 导出符号 | 签名 | 说明 |
+|----------|----------|------|------|
+| <文件路径> | <函数/类名> | `<签名>` | <一句话说明> |
+```
+
+**契约生成规则**：
+
+- **CLI 命令**：从 Spec 的 WHEN/THEN 场景反推 CLI 命令格式。如果 Spec 描述的是命令行工具行为（如 "WHEN 用户运行 `specline quickfix`"），则提取命令名和参数
+- **HTTP 端点**：从 Spec 的 WHEN/THEN 场景反推 HTTP API 格式。根据行为语义推测 HTTP 方法和路径（RESTful 约定），根据 THEN 推测响应状态码和格式
+- **模块导出**：从 tasks.md 的 Files 字段推导模块文件路径，从 Spec 的 WHEN/THEN 反推需要导出的函数名和签名。**只列出被外部调用的导出**（如被 CLI 入口调用的函数、被其他模块 import 的函数），不列出内部 helper
+- **粒度控制**：只定义「外部可调用的接口」——CLI 命令、HTTP 端点、模块间主要导出。不定义内部私有函数/helper
+- 如果某类接口不存在（如纯 CLI 工具无 HTTP 端点），对应的子章节写「（无）」而非省略
+
+> **注意**：接口契约是技术设计决策（API 叫什么名字、参数是什么类型），应放在 design.md 而非 spec.md。Spec 负责「用户要什么」，契约负责「怎么对外暴露」。
 > ```markdown
 > > ⚠️ 未发现项目显式架构文档（AGENTS.md / CLAUDE.md / .cursor/rules/）。以上分析基于代码库目录结构推断，建议补充架构文档以提高后续变更的分析精度。
 > ```
@@ -321,7 +366,11 @@ specline-pipeline-gate.sh new --change "<change-name>"
    - 如果仍 < 60%，记录警告但不阻塞，留给人工 Gate 1 决策
 3. **文件冲突自检**：检查第一批次中各任务的 Files 是否有交集
    - 如果有交集，修整 tasks.md（合并冲突任务或调整文件范围）
-4. 完成后输出摘要：
+4. **契约一致性自检**：如果 design.md 包含「对外接口契约」章节，检查：
+   - tasks.md 的「测试文件归属」表格中是否有 specline-test-writer 负责的集成/E2E 测试任务（必须一致：有契约 → 有测试任务，无测试任务 → 无契约）
+   - 契约章节中定义的 CLI 命令/HTTP 端点/模块导出是否与 tasks.md 中对应任务的 Covers 中引用的 Scenario 相关
+5. 完成后输出摘要：
    - 生成了哪些文件
    - 共有 N 个任务，独立任务 M 个（并行度 = M/N）
    - 第 1 批次几个任务
+   - 是否生成了接口契约

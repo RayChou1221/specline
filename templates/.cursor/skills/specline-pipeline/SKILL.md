@@ -216,7 +216,7 @@ Human Gate 1 具体交互：使用 `AskUserQuestion`，title="确认 Spec 和任
 
 ### Phase 2: CODING
 
-> **并行加速**：Human Gate 1 通过后，**同时**启动 coding 和 specline-test-writer。specline-test-writer 是黑盒的——只需要 Spec 文档，不需要实现代码。两者并行可节省 specline-test-writer 的编写时间。
+> **并行加速**：Human Gate 1 通过后，**同时**启动 coding 和 specline-test-writer。specline-test-writer 是黑盒的——读取 Spec（验收标准）和 design.md（对外接口契约），不需要实现代码。两者并行可节省 specline-test-writer 的编写时间。
 
 #### Step 6: 并行启动（test-writer + DAG 构建）
 
@@ -238,7 +238,7 @@ Track A 和 Track B 同时启动，互不阻塞。test-writer 在 Coding 全部�
 
 **6a. 启动 specline-test-writer（与 Coding 阶段 Agent 同时启动）**：
 
-使用 Task 工具，subagent_type="specline-test-writer"，prompt 中包含 changeName/Spec/Tasks 路径和黑盒约束。specline-test-writer 只编写 tests/integration/** 和 tests/e2e/** 下的测试，产出 test-code-result.json。
+使用 Task 工具，subagent_type="specline-test-writer"，prompt 中包含 changeName/Spec/Design/Tasks 路径和黑盒约束。test-writer 从 `design.md` 的「对外接口契约」章节获取 CLI 命令/HTTP 端点/模块导出签名（若章节不存在则在 prompt 中注明无需契约），从 spec.md 获取行为验收标准（WHEN/THEN）。specline-test-writer 只编写 tests/integration/** 和 tests/e2e/** 下的测试，产出 test-code-result.json。
 
 **6b. 解析 tasks.md，构建任务 DAG**：
 
@@ -313,6 +313,10 @@ sed -i '' "s/^## ${task_id}\. \[ \]/## ${task_id}. [x]/" specline/changes/<name>
 Build Gate 校验内容：
 - 编译/语法检查（原有逻辑）
 - **单元测试文件存在性检查**（新增）：对 Testable=true 的任务，检查其 `tests/unit/` 和 `tests/models/` 下的单元测试文件是否存在且语法正确。如果 Testable=true 的任务未产出对应测试文件，Build Gate 失败
+- **对外接口契约签名检查**（新增）：以 tasks.md 为决策源头——仅当 tasks.md 末尾「测试文件归属」表格中存在 specline-test-writer 负责的测试时，才检查 design.md 的「对外接口契约」章节：
+  - 有 test-writer 任务但缺契约章节 → 阻断（报错：缺契约）
+  - 有契约 → 逐项检查 CLI 命令注册、HTTP 路径注册、模块导出声明是否存在（只检查签名存在性，不检查语义正确性）
+  - 无 test-writer 任务 → 跳过
 
 exit code 0 = 通过，进入 Phase 3。失败处理见 [Layer 3: Build Gate 失败处理](#build-gate-失败处理)。
 
@@ -376,7 +380,7 @@ specline-test-writer 已在 Phase 2（Step 6a）与 Coding 并行启动。进入
 
 > `test_framework` 写入状态文件后，后续 `specline-pipeline-gate.sh` 的 test gate 会自动读取并选择正确的测试命令（Jest/pytest/go test 等）。
 
-> **黑盒约束回顾**：specline-test-writer 只能基于 Spec 文档编写测试，不能读取任何实现源代码。specline-test-writer 会自动检测项目测试框架（Jest/pytest/go test 等），按项目实际语言编写测试。
+> **黑盒约束回顾**：specline-test-writer 只能基于 Spec 文档（验收标准）和 design.md 的「对外接口契约」章节（接口签名）编写测试，不能读取任何实现源代码。specline-test-writer 会自动检测项目测试框架（Jest/pytest/go test 等），按项目实际语言编写测试。
 
 #### Step 13: 测试门禁链（串行）
 
@@ -420,6 +424,7 @@ specline-pipeline-gate.sh archive --execute --change "<name>"
 4. **Gate 重置**：`jq '...gate.passed = null' "$STATE_FILE"`
 5. **特殊规则**：
    - `spec_ambiguity` → 暂停流水线展示模糊点（minimal/none 策略下降级为 WARNING）
+   - `contract_mismatch` → 优先回 coding agent 按契约修正（最多 2 次）；2 次后仍不一致 → 暂停并报告用户确认
    - 接口不兼容 → 只重置受影响的下游任务（保留未受影响任务的状态）
    - Hook 阻断 → 先诊断原因 → 与用户沟通（AskUserQuestion）→ 修复后重试 → 绝不静默降级
    - 测试失败优先级：单元测试优先于集成/E2E
@@ -442,6 +447,7 @@ specline-pipeline-gate.sh archive --execute --change "<name>"
 - **集成/E2E 测试失败**（`tests/integration/` / `tests/e2e/`）：先判断是测试代码还是实现代码问题
   - 测试代码问题 → specline-test-writer 自修（最多 2 次）
   - 实现代码问题 → Covers 追溯定位 → 回 coding agent 修复 → 用影响范围算法重置受影响 Gate
+  - **契约不一致** (`contract_mismatch`)：实现代码的对外接口与 design.md 契约不一致 → 优先回 coding agent 按契约修正代码（最多 2 次）；若 2 次后仍不一致，暂停并报告用户确认以 design.md 契约为准还是以代码为准
   - Gate 重置：`.phases.test.sub_phases.integration.gates.test_integration_gate.passed = null | .phases.test.sub_phases.e2e.gates.test_e2e_gate.passed = null`
 - **优先级**：单元测试失败优先修复；代码修复后所有测试 Gate 全部重置
 
@@ -604,7 +610,7 @@ AskUserQuestion({
 每阶段完成后，编排者自查：
 
 - [ ] **SPEC 阶段**：4 Artifact 齐全（proposal/design/tasks/specs）；Spec Gate 通过；HG1 已确认；spec-review.json status=approved
-- [ ] **CODING 阶段**：全部批次完成；每个 task 产出报告存在；tasks.md checkbox 全部 [x]；Build Gate 通过；Testable=true 任务的 test_files 非空
+- [ ] **CODING 阶段**：全部批次完成；每个 task 产出报告存在；tasks.md checkbox 全部 [x]；Build Gate 通过（含契约签名检查）；Testable=true 任务的 test_files 非空
 - [ ] **CODE REVIEW 阶段**：code-review.json 存在；error 计数 = 0；Lint Gate 通过；HG2 已处理
 - [ ] **TEST 阶段**：test_framework 已写入状态文件；test-unit/integration/e2e Gate 全绿
 - [ ] **ARCHIVE 阶段**：HG3 已确认；归档目录已创建；session 绑定已解除；Delta spec sync 决策已完成

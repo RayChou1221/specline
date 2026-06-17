@@ -781,6 +781,119 @@ gate_spec() {
   pass "Spec Gate 全部通过"
 }
 
+# ===== 对外接口契约签名检查 =====
+# 以 tasks.md 为决策源头：有 test-writer 任务才需要契约，有契约才检查签名存在性
+check_contract_signatures() {
+  local tasks_file="$1"
+  local design_file="$PROJECT_ROOT/specline/changes/$CHANGE/design.md"
+
+  # 1. 判断是否需要契约：检查 tasks.md 末尾「测试文件归属」表格中是否有 specline-test-writer 负责的集成/E2E 测试
+  local has_test_writer=false
+  if grep -q 'specline-test-writer' "$tasks_file" 2>/dev/null; then
+    has_test_writer=true
+  fi
+
+  if [ "$has_test_writer" = false ]; then
+    echo "ℹ️  tasks.md 中无 specline-test-writer 负责的测试任务，跳过契约检查"
+    return 0
+  fi
+
+  # 2. 有 test-writer 任务 → 设计文档必须有契约章节
+  if ! grep -q '^## 对外接口契约' "$design_file" 2>/dev/null; then
+    fail "tasks.md 中存在 specline-test-writer 负责的集成/E2E 测试任务，但 design.md 缺少「对外接口契约」章节。请运行 /specline-pipeline propose 重新生成，或手动补充"
+  fi
+
+  echo "正在检查对外接口契约签名..."
+
+  local contract_errors=""
+
+  # 3. 解析契约章节中的 CLI 命令，检查命令注册代码是否存在
+  local in_cli_section=false
+  while IFS= read -r line; do
+    # 检测章节边界
+    if echo "$line" | grep -q '^### CLI'; then
+      in_cli_section=true
+      continue
+    elif echo "$line" | grep -q '^### HTTP'; then
+      in_cli_section=false
+      continue
+    fi
+
+    if [ "$in_cli_section" = true ] && echo "$line" | grep -q '^|.*|.*|.*|.*|.*|$'; then
+      local cli_cmd
+      cli_cmd=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')
+      # 跳过表头行
+      if [ "$cli_cmd" != "命令" ] && [ -n "$cli_cmd" ]; then
+        # grep 搜索命令注册（CLI 命令通常在 specline-pipeline-gate.sh 或其他 .sh 文件中有 case 分支）
+        if ! grep -rq "$cli_cmd" "$PROJECT_ROOT" --include="*.sh" --include="*.py" --include="*.ts" --include="*.go" 2>/dev/null; then
+          contract_errors="${contract_errors}
+  CLI 命令 '$cli_cmd' 在契约中定义，但未在代码中找到注册（搜索了 .sh/.py/.ts/.go 文件）"
+        fi
+      fi
+    fi
+  done < <(awk '/^## 对外接口契约/,/^## [^对]/' "$design_file" 2>/dev/null)
+
+  # 4. 解析契约章节中的 HTTP 端点，检查路由注册代码是否存在
+  local in_http_section=false
+  while IFS= read -r line; do
+    if echo "$line" | grep -q '^### HTTP'; then
+      in_http_section=true
+      continue
+    elif echo "$line" | grep -qE '^### (模块导出|CLI)'; then
+      in_http_section=false
+      continue
+    fi
+
+    if [ "$in_http_section" = true ] && echo "$line" | grep -q '^|.*|.*|.*|.*|.*|$'; then
+      local http_path
+      http_path=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}')
+      # 跳过表头行
+      if [ "$http_path" != "路径" ] && [ -n "$http_path" ]; then
+        # 去掉路径参数中的动态段（如 /api/users/:id → /api/users/ 前缀匹配）
+        local static_prefix
+        static_prefix=$(echo "$http_path" | sed 's/:[a-zA-Z_][a-zA-Z0-9_]*/FINDANY/' | sed 's/\/FINDANY//g')
+        if ! grep -rq "$static_prefix" "$PROJECT_ROOT" --include="*.py" --include="*.ts" --include="*.tsx" --include="*.go" --include="*.rs" 2>/dev/null; then
+          contract_errors="${contract_errors}
+  HTTP 路径 '$http_path' 在契约中定义，但未在代码中找到路由注册（搜索了 .py/.ts/.tsx/.go/.rs 文件）"
+        fi
+      fi
+    fi
+  done < <(awk '/^## 对外接口契约/,/^## [^对]/' "$design_file" 2>/dev/null)
+
+  # 5. 解析契约章节中的模块导出
+  local in_exports_section=false
+  while IFS= read -r line; do
+    if echo "$line" | grep -q '^### 模块导出'; then
+      in_exports_section=true
+      continue
+    elif echo "$line" | grep -qE '^## [^对]' && [ "$in_exports_section" = true ]; then
+      break
+    fi
+
+    if [ "$in_exports_section" = true ] && echo "$line" | grep -q '^|.*|.*|.*|.*|$'; then
+      local export_file export_name
+      export_file=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')
+      export_name=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}')
+      # 跳过表头行
+      if [ "$export_file" != "模块文件" ] && [ -n "$export_file" ] && [ -n "$export_name" ]; then
+        if [ ! -f "$PROJECT_ROOT/$export_file" ]; then
+          contract_errors="${contract_errors}
+  模块文件 '$export_file' 在契约中定义，但文件不存在"
+        elif ! grep -q "export.*$export_name\b\|func $export_name\b\|def $export_name\b\|pub fn $export_name\b" "$PROJECT_ROOT/$export_file" 2>/dev/null; then
+          contract_errors="${contract_errors}
+  导出符号 '$export_name' 在契约中定义，但未在 '$export_file' 中找到对应声明"
+        fi
+      fi
+    fi
+  done < <(awk '/^## 对外接口契约/,/^## [^对]/' "$design_file" 2>/dev/null)
+
+  if [ -n "$contract_errors" ]; then
+    fail "对外接口契约签名不一致:${contract_errors}"
+  fi
+
+  pass "对外接口契约签名检查通过"
+}
+
 gate_build() {
   load_project_config
 
@@ -903,6 +1016,11 @@ gate_build() {
     else
       echo "ℹ️  无 Testable=true 任务，跳过单元测试文件检查"
     fi
+  fi
+
+  # 对外接口契约检查（以 tasks.md 为决策源头）
+  if [ -f "$tasks_file" ]; then
+    check_contract_signatures "$tasks_file"
   fi
 
   write_gate_passed "phases.coding.gates.build_gate"

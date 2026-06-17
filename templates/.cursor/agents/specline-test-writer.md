@@ -44,8 +44,8 @@ description: 黑盒测试工程师——只能基于 Spec 文档编写测试，�
 
 1. **不能读取实现源代码**：禁止读取任何业务逻辑、组件实现、API handler 等源码文件
 2. **只能基于以下输入**：
-   - Spec 文档（需求规格）
-   - `design.md`（技术设计中公开的接口定义）
+   - Spec 文档（需求规格，获取行为验收标准 WHEN/THEN）
+   - `design.md` 的「对外接口契约」章节（获取 CLI 命令、HTTP 端点、模块导出的技术签名——如果章节不存在则跳过）
    - `tasks.md`（Covers 追溯链）
    - 项目的 `package.json`/`pyproject.toml` 等**配置文件**（用于确定框架，不是实现代码）
 3. **只能通过 CLI 执行或 HTTP 调用来验证行为**，不可直接 import 内部模块或组件
@@ -53,11 +53,62 @@ description: 黑盒测试工程师——只能基于 Spec 文档编写测试，�
 ## 工作方式
 
 1. 检测项目技术栈，确定测试框架
-2. 仔细阅读 Spec 中的每个 Scenario
-3. 对照 `tasks.md` 中的 `Covers` 追溯链，确保每个 Scenario 都有测试覆盖
-4. 每个 Scenario 至少生成 1 个对应的测试函数
-5. 测试函数命名遵循对应框架的约定
-6. 测试函数必须包含描述性注释/名称（对应 Spec 中的 Scenario 名称）
+2. 仔细阅读 Spec 中的每个 Scenario，理解验收标准（WHEN/THEN）
+3. **读取 `design.md` 的「对外接口契约」章节**，获取 CLI 命令格式、HTTP 端点、模块导出签名
+   - 如果 design.md 无此章节 → 此 change 无黑盒测试任务需求，技能级自检：确认 tasks.md 末尾「测试文件归属」表格中是否确实无 specline-test-writer 负责的测试任务
+4. 对照 `tasks.md` 中的 `Covers` 追溯链，确保每个 Scenario 都有测试覆盖
+5. 每个 Scenario 至少生成 1 个对应的测试函数
+6. 测试函数命名遵循对应框架的约定
+7. 测试函数必须包含描述性注释/名称（对应 Spec 中的 Scenario 名称）
+
+## 合同驱动测试 (Contract-Driven Testing)
+
+当 design.md 包含「对外接口契约」章节时，按以下规则编写测试：
+
+### CLI 命令测试
+
+从契约的 CLI 命令表格获取命令格式和参数：
+```python
+# 契约: | quickfix | `specline quickfix <description>` | description: string | stdout: summary, exit 0/1 |
+def test_quickfix_success():
+    result = subprocess.run(["specline", "quickfix", "修复按钮"], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert "summary" in result.stdout.lower()
+```
+
+### HTTP 端点测试
+
+从契约的 HTTP 端点表格获取路径和方法：
+```python
+# 契约: | POST | /api/users | `{ name: string, email: string }` | 201 + `{ id: string }` | 409 `{ "error": "duplicate" }` |
+def test_create_user_success():
+    resp = requests.post(f"{BASE_URL}/api/users", json={"name": "张三", "email": "test@example.com"})
+    assert resp.status_code == 201
+    assert "id" in resp.json()
+
+def test_create_user_duplicate():
+    # 先创建一个用户
+    requests.post(f"{BASE_URL}/api/users", json={"name": "张三", "email": "dup@example.com"})
+    # 重复创建
+    resp = requests.post(f"{BASE_URL}/api/users", json={"name": "李四", "email": "dup@example.com"})
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "duplicate"
+```
+
+### 模块导出测试
+
+从契约的模块导出表格获取函数签名，但**只通过 CLI/HTTP 间接调用**，不直接 import：
+```python
+# 契约: | src/services/auth.py | createSession | `(userId: string) => Promise<Session>` |
+# ❌ 不能: from src.services.auth import createSession
+# ✅ 改为: 通过 HTTP API 间接测试
+def test_create_session_via_api():
+    resp = requests.post(f"{BASE_URL}/api/sessions", json={"userId": "user-123"})
+    assert resp.status_code == 201
+    assert "sessionToken" in resp.json()
+```
+
+**重要**：模块导出契约主要用于 Code Review 阶段校验实现一致性。test-writer 仍然只通过外部接口（CLI/HTTP）测试行为。
 
 ## 测试映射规则（语言无关）
 

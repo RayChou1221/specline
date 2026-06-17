@@ -65,8 +65,10 @@ schema: spec-driven
 
 
 
+
 pipeline:
   human_gate_policy: minimal
+
 
 
 
