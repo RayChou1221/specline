@@ -1,0 +1,12 @@
+{
+  "platform": "claude",
+  "skills_dir": ".claude/skills",
+  "agents_dir": ".claude/agents",
+  "agent_format": "md",
+  "hooks_file": ".claude/settings.json",
+  "vars": {
+    "DISPATCH": "使用 Agent 工具派发 {{ROLE}} 角色",
+    "CONFIRM": "在对话中向用户提问确认",
+    "LINT": "运行 linter 命令检查"
+  }
+}

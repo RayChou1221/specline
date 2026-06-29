@@ -1,0 +1,12 @@
+{
+  "platform": "codex",
+  "skills_dir": ".agents/skills",
+  "agents_dir": ".agents/agents",
+  "agent_format": "toml",
+  "hooks_file": ".codex/hooks.json",
+  "vars": {
+    "DISPATCH": "spawn {{ROLE}} agent with prompt:",
+    "CONFIRM": "在对话中向用户提问确认",
+    "LINT": "运行 linter 命令检查"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "platform": "opencode",
+  "skills_dir": ".opencode/skills",
+  "agents_dir": null,
+  "agent_format": null,
+  "hooks_file": null,
+  "vars": {
+    "DISPATCH": "使用 task(subagent_type=\"general\") 并在 prompt 中内嵌 {{ROLE}} 的 instructions",
+    "CONFIRM": "在对话中向用户提问确认",
+    "LINT": "运行 linter 命令检查"
+  }
+}

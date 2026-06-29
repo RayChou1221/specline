@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{
+      "command": "specline hook session-start --platform cursor",
+      "timeout": 10
+    }]
+  }
+}

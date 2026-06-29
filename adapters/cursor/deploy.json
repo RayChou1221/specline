@@ -1,0 +1,12 @@
+{
+  "platform": "cursor",
+  "skills_dir": ".cursor/skills",
+  "agents_dir": ".cursor/agents",
+  "agent_format": "md",
+  "hooks_file": ".cursor/hooks.json",
+  "vars": {
+    "DISPATCH": "使用 Task 工具，subagent_type=\"{{ROLE}}\"",
+    "CONFIRM": "使用 AskUserQuestion 工具",
+    "LINT": "使用 ReadLints 工具"
+  }
+}
