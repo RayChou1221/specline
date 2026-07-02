@@ -1,6 +1,6 @@
 ---
 name: specline-apply-change
-description: Implement tasks from a Specline change. Use when the user wants to start implementing, continue implementation, or work through tasks.
+description: 实现 Specline change 中的任务。用于用户想开始实现、继续实现或逐项推进 tasks。
 license: MIT
 compatibility: Compatible with specline.
 metadata:
@@ -9,11 +9,11 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
-Implement tasks from a Specline change.
+实现 Specline change 中的任务。
 
-**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**输入**：可选传入 change name。若未传入，先判断能否从对话上下文推断；若模糊或有歧义，必须展示可用 change 让用户选择。
 
-## 速览 (Layer 1)
+## 第 1 层：速览
 
 > **一句话**：实现 Specline change 中的编码任务。
 > **入口**：`/specline-apply-change [change-name]` 或直接说「继续实现」
@@ -23,11 +23,11 @@ Implement tasks from a Specline change.
 > - change 选择 → 若上下文中已有 change name，直接使用；否则取第一个活跃 change
 > - 其他 {{CONFIRM}} 交互 → 自动采用默认安全选项继续，不暂停等待人工输入
 
-**Fluid Workflow Integration**
+**流动式工作流集成**
 
-This skill supports the "actions on a change" model:
-- **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
-- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly
+本 Skill 支持围绕单个 change 持续执行 action 的模型：
+- **可随时调用**：Artifact 尚未全部完成但已有 tasks 时、部分实现后、或与其他 action 交错时都可调用
+- **允许更新 Artifact**：如果实现暴露设计问题，建议更新 Artifact；不被阶段锁死，按实际情况流动推进
 
 **开始前请确认：**
 - [ ] Change 已选中（`/specline-pipeline --change <name>`）
@@ -36,71 +36,71 @@ This skill supports the "actions on a change" model:
 - [ ] 已读取 design.md（知道技术决策）
 - [ ] 已读取 tasks.md（知道实现清单）
 
-## 详细步骤 — Happy Path (Layer 2)
+## 第 2 层：主流程
 
-**Steps**
+**步骤**
 
-1. **Select the change**
+1. **选择 change**
 
-   If a name is provided, use it. Otherwise:
-   - Infer from conversation context if the user mentioned a change
-   - Auto-select if only one active change exists
-   - If ambiguous, run `specline gate list --json` to get available changes and use {{CONFIRM}} to let the user select
+   如果提供了 name，直接使用。否则：
+   - 如果用户在对话中提到 change，则从上下文推断
+   - 如果只有一个活跃 change，自动选择
+   - 如果有歧义，运行 `specline gate list --json` 获取可用 change，并使用 {{CONFIRM}} 让用户选择
 
-   Always announce: "Using change: <name>" and how to override (e.g., `/specline-pipeline --change <other>`).
+   始终告知："Using change: <name>"，并说明如何覆盖选择（如 `/specline-pipeline --change <other>`）。
 
-2. **Check status to understand the schema**
+2. **检查状态以识别 schema**
    ```bash
    specline gate artifacts --change "<name>" --json
    ```
-   Parse the JSON to understand:
-   - `schemaName`: The workflow being used (e.g., "spec-driven")
-   - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
+   解析 JSON，确认：
+   - `schemaName`：当前使用的工作流（如 "spec-driven"）
+   - 哪个 Artifact 包含 tasks（spec-driven 通常是 "tasks"，其他 schema 以状态为准）
 
-3. **Read context files**
+3. **读取上下文文件**
 
-   Read the planning files at `specline/changes/<name>/`:
-   - `proposal.md` — what & why
-   - `specs/<capability>/spec.md` — requirements & scenarios
-   - `design.md` — architecture & decisions
-   - `tasks.md` — implementation checklist
+   读取 `specline/changes/<name>/` 下的规划文件：
+   - `proposal.md` — 做什么与为什么
+   - `specs/<capability>/spec.md` — Requirements 与 Scenarios
+   - `design.md` — 架构与决策
+   - `tasks.md` — 实现清单
 
-   Check task completion: count `- [ ]` (incomplete) vs `- [x]` (complete).
+   检查 task 完成度：统计 `- [ ]`（未完成）与 `- [x]`（已完成）。
 
-4. **Show current progress**
+4. **展示当前进度**
 
-   Display:
-   - Progress: "N/M tasks complete"
-   - Remaining tasks overview
+   展示：
+   - 进度："N/M tasks complete"
+   - 剩余任务概览
 
-5. **Implement tasks (loop until done or blocked)**
+5. **实现 tasks（循环直到完成或阻塞）**
 
-   For each pending task:
-   - Show which task is being worked on
-   - Make the code changes required
-   - Keep changes minimal and focused
-   - Mark task complete in the tasks file: `- [ ]` → `- [x]`
-   - Continue to next task
+   对每个待完成 task：
+   - 展示当前正在处理的 task
+   - 完成所需代码修改
+   - 保持修改最小且聚焦
+   - 在 tasks 文件中标记完成：`- [ ]` → `- [x]`
+   - 继续下一个 task
 
-   **Pause if:**
-   - Task is unclear → ask for clarification
-   - Implementation reveals a design issue → suggest updating artifacts
-   - Error or blocker encountered → report and wait for guidance
-   - User interrupts
+   **出现以下情况时暂停：**
+   - Task 不清晰 → 请求澄清
+   - 实现暴露设计问题 → 建议更新 Artifact
+   - 遇到错误或阻塞 → 报告并等待指引
+   - 用户中断
 
-6. **On completion or pause, show status**
+6. **完成或暂停时展示状态**
 
-   Display:
-   - Tasks completed this session
-   - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
-   - If paused: explain why and wait for guidance
+   展示：
+   - 本 session 完成的 tasks
+   - 总体进度："N/M tasks complete"
+   - 如果全部完成：建议归档
+   - 如果暂停：解释原因并等待指引
 
-## 输出模板 & 高级话题 (Layer 3)
+## 第 3 层：输出模板与高级话题
 
 ### 输出模板
 
-**Output During Implementation**
+**实现过程输出**
 
 ```
 ## Implementing: <change-name> (schema: <schema-name>)
@@ -114,7 +114,7 @@ Working on task 4/7: <task description>
 ✓ Task complete
 ```
 
-**Output On Completion**
+**完成时输出**
 
 ```
 ## Implementation Complete
@@ -131,7 +131,7 @@ Working on task 4/7: <task description>
 All tasks complete! Ready to archive this change.
 ```
 
-**Output On Pause (Issue Encountered)**
+**暂停时输出（遇到问题）**
 
 ```
 ## Implementation Paused
@@ -151,16 +151,16 @@ All tasks complete! Ready to archive this change.
 What would you like to do?
 ```
 
-### Guardrails
-- Keep going through tasks until done or blocked
-- Always read context files before starting (from the apply instructions output)
-- If task is ambiguous, pause and ask before implementing
-- If implementation reveals issues, pause and suggest artifact updates
-- Keep code changes minimal and scoped to each task
-- Update task checkbox immediately after completing each task
-- Pause on errors, blockers, or unclear requirements - don't guess
-- Use contextFiles from CLI output, don't assume specific file names
-- **Hook blocked → no silent fallback**: If this skill is invoked because a coding subagent (specline-frontend-dev / specline-backend-dev) was blocked by a hook, you MUST first notify the user of the blocking cause and attempt diagnosis. Do not silently execute tasks that should have been handled by the blocked subagent. Reference the Hook Blocking Resolution Protocol in the specline-pipeline skill.
+### 约束
+- 持续推进 tasks，直到完成或阻塞
+- 开始前始终读取上下文文件（来自 apply 指令输出）
+- task 有歧义时，先暂停询问，再实现
+- 实现暴露问题时，暂停并建议更新 Artifact
+- 保持代码修改最小化，并限定在当前 task 范围内
+- 每完成一个 task，立即更新 checkbox
+- 遇到错误、阻塞或需求不清时暂停，不要猜测
+- 使用 CLI 输出中的 contextFiles，不要假设固定文件名
+- **Hook blocked → no silent fallback**：如果本 Skill 是因为 coding subagent（specline-frontend-dev / specline-backend-dev）被 hook 阻断而被调用，必须先告知用户阻断原因并尝试诊断。不要静默执行本应由被阻断 subagent 处理的任务。参考 specline-pipeline Skill 中的 Hook Blocking Resolution Protocol。
 
 ---
 
@@ -176,7 +176,7 @@ What would you like to do?
 | "这个任务没有测试也没关系，下一个任务会补" | 每个 Testable=true 的任务必须产出测试。推迟 = 不写。 |
 | "tasks.md 的 Covers 追溯链我不用管，代码写对就行" | Covers 链是 Spec → Code 的可追溯纽带。不维护它，Code Review 和测试失败定位都失去锚点。 |
 
-## Verification Checklist
+## 验证清单
 
 每完成一个任务后自查，全部完成后终查：
 

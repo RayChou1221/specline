@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义 Pipeline 编排者写入状态和事件日志的规范——谁在何时写入什么内容。这是编排者在 SPE 编码阶段（Step 7）和异常恢复阶段（Layer 3）写入 `.pipeline-state.json` 和 `pipeline-events.jsonl` 时必须遵循的规则。
+定义 Pipeline 编排者写入状态和事件日志的规范——谁在何时写入什么内容。这是编排者在 SPE 编码阶段（步骤 7）和异常恢复阶段（第 3 层）写入 `.pipeline-state.json` 和 `pipeline-events.jsonl` 时必须遵循的规则。
 
 ## 状态写入规则
 

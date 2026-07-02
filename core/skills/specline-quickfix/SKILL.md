@@ -7,7 +7,7 @@ description: 轻量修改 Skill —— 小改动用 quickfix，大功能用 pipe
 
 ---
 
-## Layer 1: 速览与定位
+## 第 1 层：速览与定位
 
 **一句话定位**：小改动用 quickfix，大功能用 pipeline。
 
@@ -45,13 +45,13 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
 
 ---
 
-## Layer 2: Happy Path
+## 第 2 层：主流程
 
-### Phase 1: UNDERSTAND
+### 阶段 1：UNDERSTAND
 
 **目标**：理解变更上下文，明确修改范围。
 
-**Steps**：
+**步骤**：
 
 1. 解析用户描述，提取关键词（文件名、函数名、错误信息等）
 <!-- platform:cursor -->
@@ -67,15 +67,15 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
    - 不需要新测试 ✓
 4. **意图模糊时**：使用 {{CONFIRM}} 向用户确认变更范围和目标，不要猜测
 
-**准入条件**：变更范围已验证在 quickfix 适用范围内（参见 Layer 3 边界判断）
+**准入条件**：变更范围已验证在 quickfix 适用范围内（参见第 3 层边界判断）
 
 ---
 
-### Phase 2: IMPLEMENT
+### 阶段 2：IMPLEMENT
 
 **目标**：直接编辑源文件，完成修改。
 
-**Steps**：
+**步骤**：
 
 <!-- platform:cursor -->
 1. 使用 Write / StrReplace 工具直接编辑文件
@@ -95,11 +95,11 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
 
 ---
 
-### Phase 3: REVIEW
+### 阶段 3：REVIEW
 
 **目标**：通过 Lint 检查和 Agent 自审确保代码质量。
 
-**Steps**：
+**步骤**：
 
 <!-- platform:cursor -->
 1. 运行 ReadLints 收集所有 lint 问题
@@ -120,11 +120,11 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
 
 ---
 
-### Phase 4: TEST
+### 阶段 4：TEST
 
 **目标**：运行项目已有单元测试，确保不引入回归。
 
-**Steps**：
+**步骤**：
 
 1. **自动检测测试框架**：
    - 检查 `package.json` scripts → Jest / Mocha / Vitest
@@ -139,11 +139,11 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
 
 ---
 
-### Phase 5: ARCHIVE
+### 阶段 5：ARCHIVE
 
 **目标**：生成轻量归档，提供变更可追溯性。
 
-**Steps**：
+**步骤**：
 
 1. 在 `specline/changes/archive/` 下创建归档目录：
    ```
@@ -182,7 +182,7 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
 
 ---
 
-## Layer 3: 异常与边界
+## 第 3 层：异常与边界
 
 ### Quickfix vs Pipeline 边界判断
 
@@ -223,7 +223,7 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
 
 ---
 
-## Layer 4: 附录
+## 第 4 层：附录
 
 ### 与 Pipeline 的关系
 
@@ -276,7 +276,7 @@ Quickfix 的极简流程容易让人产生"反正很快，随便点"的心态：
 | "不用归档了，就是个小修，没记录无所谓" | 不归档意味着不可追溯。三个月后没人记得这个修改是谁做的、为什么做的。 |
 | "不用询问用户 git commit，我自己提交了" | Commit 是用户的决定，不是 Agent 的。擅自 commit 剥夺了用户的审查机会。 |
 
-## Verification Checklist
+## 验证清单
 
 Quickfix 完成后，自查：
 

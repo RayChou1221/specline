@@ -2,11 +2,11 @@
 
 ## Purpose
 
-4 套子 Agent prompt 模板，供 SKILL.md Step 7 的编排者按需读取。编排者根据 `task.type` 和 `task.testable` 选择对应模板，填充 `${变量}` 后作为子 Agent 的 prompt。
+4 套子 Agent prompt 模板，供 SKILL.md 步骤 7 的编排者按需读取。编排者根据 `task.type` 和 `task.testable` 选择对应模板，填充 `${变量}` 后作为子 Agent 的 prompt。
 
 ## 使用说明
 
-编排者在 Step 7 中执行以下逻辑：
+编排者在步骤 7 中执行以下逻辑：
 
 1. 读取本文件（`templates/subagent-prompts.md`）
 2. 根据 `task.type` 和 `task.testable` 选择模板：
@@ -120,7 +120,7 @@
 1. 分析 Spec 中本任务覆盖的 Scenario，提取需要测试的逻辑单元
 2. 在 tests/unit/<module>/test_<feature>.{ext} 下编写测试文件
 3. 每个 Scenario 至少 1 个测试函数/方法
-4. 覆盖：Happy Path + 边界条件（空值、极值、边界值）+ 异常路径（错误输入、异常状态）
+4. 覆盖：正常路径（Happy Path）+ 边界条件（空值、极值、边界值）+ 异常路径（错误输入、异常状态）
 5. 运行测试，确认全部 FAIL（RED）
 
 ### GREEN 阶段

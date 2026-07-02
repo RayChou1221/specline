@@ -9,7 +9,7 @@ description: >-
 
 ---
 
-## Layer 0: Session 绑定
+## 第 0 层：Session 绑定
 
 Session 通过 `specline gate bind <session_id> <change>` 绑定到 Pipeline。
 绑定后 sessionStart Hook 自动注入阶段上下文，归档时自动解绑。
@@ -17,7 +17,7 @@ Session 通过 `specline gate bind <session_id> <change>` 绑定到 Pipeline。
 
 ---
 
-## Layer 1: 速览与定位
+## 第 1 层：速览与定位
 
 你是**流水线编排者**，不是执行者。
 
@@ -30,7 +30,7 @@ Session 通过 `specline gate bind <session_id> <change>` 绑定到 Pipeline。
 **你不做：**
 - 需求判断/Spec 编写、代码编写、代码审查、测试编写、门禁判断——这些都交给子 Agent 和 Gate 脚本
 
-### Phase 流程图
+### 阶段流程图
 
 ```
     SPEC ──→ CODING ──→ CODE REVIEW ──→ TEST ──→ ARCHIVE
@@ -71,7 +71,9 @@ Session 通过 `specline gate bind <session_id> <change>` 绑定到 Pipeline。
 
 ### 最终产出
 
-归档到 `specline/changes/archive/YYYY-MM-DD-<name>/`
+归档到 `specline/changes/archive/YYYY-MM-DD-<name>/`。
+
+归档完成后，如果本次 change 包含重大架构、接口、工作流或设计决策影响，可能由 `specline-archive-change` 提示用户是否将相关内容更新到项目知识库。该动作发生在归档成功之后，用户可跳过，不影响 pipeline 成功状态。
 
 ### Quickfix vs Pipeline 边界判断
 
@@ -79,16 +81,16 @@ Session 通过 `specline gate bind <session_id> <change>` 绑定到 Pipeline。
 
 ---
 
-## Core Operating Behaviors
+## 核心行为守则
 
 以下守则对编排者自身和所有派发的子 Agent 均生效。编排者在决策（跳过 Gate、手动修复、忽略警告）时同样接受这些守则的约束。
 
-### 1. Surface Assumptions
+### 1. 显式暴露假设
 
 执行任何非平凡操作前，显式列出假设：
 
 ```
-ASSUMPTIONS I'M MAKING:
+我当前基于这些假设继续：
 1. [关于需求的假设]
 2. [关于架构的假设]
 3. [关于范围的假设]
@@ -97,7 +99,7 @@ ASSUMPTIONS I'M MAKING:
 
 不要默默填补模糊需求。错误的假设是最昂贵的返工来源。
 
-### 2. Manage Confusion Actively
+### 2. 主动处理困惑
 
 遇到矛盾、冲突需求或模糊规范时：
 
@@ -109,7 +111,7 @@ ASSUMPTIONS I'M MAKING:
 **错误做法**：默默选择一种解释，祈祷它是正确的。
 **正确做法**："Spec 说 X 但现有代码是 Y。以哪个为准？"
 
-### 3. Push Back When Warranted
+### 3. 必要时提出异议
 
 你不是应声虫。当一个方案有明显问题时：
 
@@ -120,7 +122,7 @@ ASSUMPTIONS I'M MAKING:
 
 谄媚是失败模式。"当然可以！"然后实现一个糟糕的方案对谁都没好处。
 
-### 4. Enforce Simplicity
+### 4. 坚持简单性
 
 主动抵抗复杂化的自然倾向。完成任何实现前问自己：
 
@@ -130,7 +132,7 @@ ASSUMPTIONS I'M MAKING:
 
 1000 行能做的事用了 100 行是成功，100 行能做的事用了 1000 行是失败。
 
-### 5. Maintain Scope Discipline
+### 5. 维护范围纪律
 
 只碰你被要求碰的。不：
 - "清理"与你任务无关的代码
@@ -140,17 +142,17 @@ ASSUMPTIONS I'M MAKING:
 
 你的工作是外科手术式精确修改，不是主动翻新。
 
-### 6. Verify, Don't Assume
+### 6. 验证，不靠猜测
 
 "看起来对"永远不够——必须有证据（通过的测试、构建输出、运行时数据）。编排者自身在 Gate 决策中也不例外：Gate 脚本的 exit code 是唯一判断依据，"看着应该通过了"不算数。
 
 ---
 
-## Layer 2: Happy Path — 新建流水线
+## 第 2 层：新建流水线主流程
 
-### Phase 1: SPEC
+### 阶段 1：SPEC
 
-#### Step 1: 创建 Change
+#### 步骤 1：创建 Change
 
 ```bash
 specline gate new --change "<kebab-case-name>"
@@ -167,14 +169,14 @@ specline gate new --change "<kebab-case-name>"
 
 > 📋 完整 JSON Schema 见 [附录 A](#附录-a-pipeline-statejson-完整-schema)
 
-#### Step 2: Ambiguity Scan（风险触发，不是默认问卷）
+#### 步骤 2：Ambiguity Scan（风险触发，不是默认问卷）
 
 在启动 `specline-spec-creator` 前，编排者先做一次轻量 Ambiguity Scan。它只判断用户需求中是否存在会改变实现方向的模糊点，不把正常缺省信息变成问卷。
 
 分类规则：
 
-1. **Default path（无实质模糊）**：如果现有需求足以选择实现方向，直接进入 Step 3，不提问，也不传额外澄清上下文。
-2. **Non-blocking ambiguity（非阻断模糊）**：如果不确定性不会改变实现方向、公开行为、数据模型、安全姿态、兼容性或任务排序，则记录为 assumptions/risks，继续进入 Step 3，不打断用户。
+1. **Default path（无实质模糊）**：如果现有需求足以选择实现方向，直接进入步骤 3，不提问，也不传额外澄清上下文。
+2. **Non-blocking ambiguity（非阻断模糊）**：如果不确定性不会改变实现方向、公开行为、数据模型、安全姿态、兼容性或任务排序，则记录为 assumptions/risks，继续进入步骤 3，不打断用户。
 3. **Blocking ambiguity（阻断模糊）**：仅当不问清楚可能改变实现方向、公开行为、数据模型、安全姿态、兼容性或任务排序时才判定为 blocking。
 4. **Explicit strict/grill path（显式严格澄清）**：只有用户明确要求 strict、grill、深度追问或面试式澄清时，才扩大问题预算；普通 pipeline 请求绝不自动进入该路径。
 
@@ -210,7 +212,7 @@ clarification_context:
 
 约束：`confirmed_decisions` 只能放用户明确回答或明确同意的内容；`minimal` 和 `none` 模式下不得制造用户中断，必须把未确认内容记录为 assumption、warning 或 deferred question。
 
-#### Step 3: 启动 specline-spec-creator
+#### 步骤 3：启动 specline-spec-creator
 
 specline-spec-creator 子 Agent 的职责是根据内联模板直接生成全部规划文件：
 - `proposal.md` — 需求提案（What/Why/Scope）
@@ -235,7 +237,7 @@ NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 jq --arg time "$NOW" '.updated_at = $time | .phases.spec.sub_phases["specline-spec-creator"] = {"status": "completed", "completed_at": $time}' "$STATE_FILE" > tmp && mv tmp "$STATE_FILE"
 ```
 
-#### Step 4: 审核全部规划文件（specline-spec-reviewer）
+#### 步骤 4：审核全部规划文件（specline-spec-reviewer）
 
 specline-spec-reviewer 审核三份文件：
 1. `specs/` 下所有 spec.md 的完整性和一致性
@@ -246,7 +248,7 @@ specline-spec-reviewer 审核三份文件：
 
 若 rejected：将 feedback 反馈给用户修改，或手动编辑相应文件后重新审核（最多 3 次循环）。
 
-#### Step 5: Spec Gate
+#### 步骤 5：Spec Gate
 
 ```bash
 specline gate spec --change "<name>"
@@ -256,9 +258,9 @@ specline gate spec --change "<name>"
 
 exit code 0 = 通过，写入 passed。exit code != 0 = 失败，读取 stderr 展示给用户。
 
-#### Step 6: 人工确认 (Human Gate 1) 🟡
+#### 步骤 6：人工确认 (Human Gate 1) 🟡
 
-> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_1.passed = true`，进入 Phase 2；同时把 `clarification_context` 中的 assumptions、deferred questions、warning defaults 和风险摘要记录到事件日志或阶段摘要，不能静默丢弃。
+> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_1.passed = true`，进入阶段 2；同时把 `clarification_context` 中的 assumptions、deferred questions、warning defaults 和风险摘要记录到事件日志或阶段摘要，不能静默丢弃。
 
 Spec Gate 通过后，`full` 策略使用 {{CONFIRM}} 请求确认。展示内容包括：需求提案摘要、功能需求列表、任务拆解概览（含并行组），以及 Ambiguity Scan/Spec Creator 产出的：
 
@@ -268,11 +270,11 @@ Spec Gate 通过后，`full` 策略使用 {{CONFIRM}} 请求确认。展示内�
 
 Human Gate 1 具体交互：使用 {{CONFIRM}}，title="确认 Spec 和任务规划"，选项：`approve`（确认通过，继续编码）/ `reject`（不通过，手动修改后重新审核）。若 HG1 因 `minimal` 或 `none` 跳过，编排者不得补问用户；只记录 warnings/assumptions，并保证后续 reviewer/gate 能看到这些风险。
 
-### Phase 2: CODING
+### 阶段 2：CODING
 
 > **并行加速**：Human Gate 1 通过后，**同时**启动 coding 和 specline-test-writer。specline-test-writer 是黑盒的——读取 Spec（验收标准）和 design.md（对外接口契约），不需要实现代码。两者并行可节省 specline-test-writer 的编写时间。
 
-#### Step 6: 并行启动（test-writer + DAG 构建）
+#### 步骤 6：并行启动（test-writer + DAG 构建）
 
 时序图：
 
@@ -285,7 +287,7 @@ Track A (test-writer):
 Track B (coding):
   6b 解析 tasks.md ──→ 6c 冲突检测 ──→ 7a 派发批次1 ──→ 7b 更新状态 ──→ 7c 派发批次2...
                                                                                     ↓
-                                                                            Step 8: Build Gate
+                                                                            步骤 8：Build Gate
 
 Track A 和 Track B 同时启动，互不阻塞。test-writer 在 Coding 全部完成后、TEST 阶段前被检查（Step 12）。
 ```
@@ -310,7 +312,7 @@ Track A 和 Track B 同时启动，互不阻塞。test-writer 在 Coding 全部�
 
 将当前批次所有任务的 `Files` 按路径前缀分为三类（`implementation` / `unit_test` / `other_test`），同类型文件重叠视为冲突。跨类型重叠不冲突（测试目录与实现目录天然隔离）。
 
-#### Step 7: 按 Type 分组后并发派发 Coding Agent
+#### 步骤 7：按 Type 分组后并发派发 Coding Agent
 
 对每个批次依次处理：
 
@@ -374,7 +376,7 @@ sed -i '' "s/^## ${task_id}\. \[ \]/## ${task_id}. [x]/" specline/changes/<name>
 
 **7c. 检查是否有下一批次**。如有，回到 6c（冲突检测）→ 7a 继续派发。
 
-#### Step 8: Build Gate
+#### 步骤 8：Build Gate
 
 全部批次完成后，运行 Build Gate：
 
@@ -390,11 +392,11 @@ Build Gate 校验内容：
   - 有契约 → 逐项检查 CLI 命令注册、HTTP 路径注册、模块导出声明是否存在（只检查签名存在性，不检查语义正确性）
   - 无 test-writer 任务 → 跳过
 
-exit code 0 = 通过，进入 Phase 3。失败处理见 [Layer 3: Build Gate 失败处理](#build-gate-失败处理)。
+exit code 0 = 通过，进入阶段 3。失败处理见 [第 3 层：异常与恢复](#第-3-层异常与恢复)。
 
-### Phase 3: CODE REVIEW
+### 阶段 3：CODE REVIEW
 
-#### Step 9: 启动审查 Agent
+#### 步骤 9：启动审查 Agent
 
 根据 tasks.md 中任务类型决定审查方式：
 
@@ -418,7 +420,7 @@ code-review.json 中 unit test 相关的 finding 标注 `type` 为 `"unit_test_q
 
 > 两种审查 Agent 可并发启动。产出均为 `specline/changes/<name>/.tmp/code-review.json`（`{ "findings": [{ "severity": "error"|"warning", "type": "unit_test_quality"|"style"|"security"|"logic", "file": "...", "covers": "Requirement: xxx", "message": "..." }] }`）。
 
-#### Step 10: Lint Gate
+#### 步骤 10：Lint Gate
 
 ```bash
 specline gate lint --change "<name>"
@@ -428,19 +430,19 @@ specline gate lint --change "<name>"
 
 失败 → 根据 findings 的 `file` 和 `covers` 字段定位到具体任务，只回对应 coding agent 修复（最多 2 次）。
 
-#### Step 11: 可选人工复核 (Human Gate 2) 🟡
+#### 步骤 11：可选人工复核 (Human Gate 2) 🟡
 
-> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_2.passed = true`，进入 Phase 4。
+> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_2.passed = true`，进入阶段 4。
 
 仅当 code-review.json 中 warnings > 0 且 errors = 0 时，使用 {{CONFIRM}} 询问是否人工复核（`skip` 自动继续 / `review` 展示警告详情）。
 
-### Phase 4: TEST
+### 阶段 4：TEST
 
 > **config/docs 跳过测试**：如果 tasks.md 中所有任务均为 `Type: config` 或 `Type: docs`（无应用代码变更），TEST 阶段自动跳过——test-unit/integration/e2e Gate 在无测试目录时自动放行。流水线直接从 CODE REVIEW 进入 ARCHIVE。
 
-#### Step 12: 确认 specline-test-writer 完成
+#### 步骤 12：确认 specline-test-writer 完成
 
-specline-test-writer 已在 Phase 2（Step 6a）与 Coding 并行启动。进入 TEST 阶段时，检查 specline-test-writer 是否已完成：
+specline-test-writer 已在 阶段 2（步骤 6a）与 Coding 并行启动。进入 TEST 阶段时，检查 specline-test-writer 是否已完成：
 
 - 已完成 → 读取 `specline/changes/<name>/.tmp/test-code-result.json` 获取 `test_framework`，写入 `.pipeline-state.json`：
   ```bash
@@ -454,7 +456,7 @@ specline-test-writer 已在 Phase 2（Step 6a）与 Coding 并行启动。进入
 
 > **黑盒约束回顾**：specline-test-writer 只能基于 Spec 文档（验收标准）和 design.md 的「对外接口契约」章节（接口签名）编写测试，不能读取任何实现源代码。specline-test-writer 会自动检测项目测试框架（Jest/pytest/go test 等），按项目实际语言编写测试。
 
-#### Step 13: 测试门禁链（串行）
+#### 步骤 13：测试门禁链（串行）
 
 ```bash
 # 单元测试
@@ -465,17 +467,17 @@ specline gate test-integration --change "<name>"
 specline gate test-e2e --change "<name>"
 ```
 
-exit code 全 0 = 通过，进入 Phase 5。失败处理见 [Layer 3: 测试失败处理](#测试失败处理)。
+exit code 全 0 = 通过，进入阶段 5。失败处理见 [第 3 层：异常与恢复](#第-3-层异常与恢复)。
 
-### Phase 5: ARCHIVE
+### 阶段 5：ARCHIVE
 
-#### Step 14: 归档确认 (Human Gate 3) 🟡
+#### 步骤 14：归档确认 (Human Gate 3) 🟡
 
 > **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `none` → 跳过此 HG，直接写入 `human_gate_3.passed = true`，执行归档。`minimal` 策略下 HG3 保留人工确认。
 
 全部测试通过后，使用 {{CONFIRM}} 请求归档确认（`archive` 执行归档 / `cancel` 暂停流水线）。
 
-#### Step 15: 归档
+#### 步骤 15：归档
 
 ```bash
 specline gate archive --execute --change "<name>"
@@ -483,6 +485,8 @@ specline gate archive --change "<name>"
 ```
 
 > 归档的详细逻辑（Delta spec sync 决策、目录移动、摘要展示）由 **specline-archive-change** Skill 负责。编排者只需确认 Human Gate 3 通过后调用上述归档命令。
+>
+> 归档成功后，**specline-archive-change** 可能执行“归档后知识库更新建议”。该动作是可选的，必须由用户确认，且绝不阻塞 pipeline 完成；项目存在 `specline-knowledge` 结构时可使用它，否则应询问其他知识落点。
 
 ---
 
@@ -503,7 +507,7 @@ specline gate archive --change "<name>"
 
 ---
 
-## Layer 3: 异常与恢复
+## 第 3 层：异常与恢复
 
 ### Build 失败差异化处理
 
@@ -623,7 +627,7 @@ done
 
 ---
 
-## Layer 4: 参考文档
+## 第 4 层：参考文档
 
 > 以下文档为完整参考信息，根据需要查阅：
 
@@ -647,7 +651,7 @@ done
 | "Build 失败看起来是子 Agent 的问题，我先继续往下" | 错误会传播。修复当前阶段再向下，否则下游建立在错误的基座上。 |
 | "影响范围看起来不大，全重置就行" | 接口不兼容只应重置受影响的下游任务。全重置浪费已完成的工作，且破坏断点续跑的状态完整性。 |
 
-## Verification Checklist
+## 验证清单
 
 每阶段完成后，编排者自查：
 

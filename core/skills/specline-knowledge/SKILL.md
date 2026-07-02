@@ -3,14 +3,14 @@ name: specline-knowledge
 description: >-
   面向 AI 的项目知识库管理。检测 AGENTS.md 入口文件，追踪引用的知识文件链，
   对比代码自行判断新鲜度，按需生成/更新六类知识文件（术语表/架构/约定/决策/参考/操作指南）。
-  Use when the user wants to check, generate, or update AI-oriented project knowledge files.
+  用于用户想检查、生成或更新面向 AI 的项目知识文件。
 ---
 
 # /specline-knowledge 知识库管理 Skill
 
 ---
 
-## Layer 1: 速览与定位
+## 第 1 层：速览与定位
 
 **一句话定位**：管理面向 AI 的项目知识库——找入口、查新鲜度、按需生成六类知识文件。
 
@@ -26,16 +26,27 @@ description: >-
 **你不做**：
 
 - 往知识文件中添加任何元数据（哈希、时间戳、front matter）
-- 与 pipeline / quickfix 自动联动
+- 与 pipeline / quickfix 自动联动；归档完成后只能在用户确认下作为可选知识库落点
 - 修改项目源代码
 
 **核心原则**：知识文件是 AI 的速览地图，不是完整文档。新鲜度由 AI 阅读理解判断，不由时间戳驱动。
 
+### 归档来源增量更新
+
+当输入来自已归档 change（例如 `specline/changes/archive/YYYY-MM-DD-<name>/`）时，`specline-knowledge` 可以作为归档后知识更新的可选落点，但必须遵守：
+
+- 仅在用户确认“更新知识库”后执行。
+- 只基于该 archive 的 `proposal.md` / `design.md` / `tasks.md` / `specs/` / `summary.md` 提炼候选知识更新。
+- 默认不做全量知识库新鲜度检查，除非用户明确要求。
+- 优先更新与本次 change 直接相关的知识文件。
+- 找不到明确落点时询问用户，不要随意写入 `README.md`、`AGENTS.md` 或中心知识文件。
+- 用户跳过更新时正常结束，不视为警告或失败。
+
 ---
 
-## Layer 2: Happy Path
+## 第 2 层：主流程
 
-### Step 1: 定位入口文件
+### 步骤 1：定位入口文件
 
 按优先级搜索项目根目录：
 
@@ -46,7 +57,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 **找到入口文件**：
 
 - 读取内容，提取其中的 markdown 链接 `[text](path)` 作为知识文件引用链
-- 进入 Step 2
+- 进入步骤 2
 
 **未找到任何入口文件**：
 
@@ -61,7 +72,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 
 ---
 
-### Step 2: 解析知识文件
+### 步骤 2：解析知识文件
 
 如果用户传入了文件名参数（如 `/specline-knowledge architecture.md`），只检查该文件。
 
@@ -92,7 +103,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 
 ---
 
-### Step 3: 判断新鲜度
+### 步骤 3：判断新鲜度
 
 **不做任何额外的技术检测**——不加哈希、不加时间戳、不加 front matter。
 
@@ -117,7 +128,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 
 ---
 
-### Step 4: 生成/更新知识文件
+### 步骤 4：生成/更新知识文件
 
 **展示可选列表**，让用户勾选需要的类型：
 
@@ -148,7 +159,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 
 ---
 
-### Step 5: 更新入口文件
+### 步骤 5：更新入口文件
 
 生成/更新知识文件后，检查 AGENTS.md 是否包含对应的引用：
 
@@ -172,7 +183,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 
 ---
 
-## Layer 3: 六类知识文件详解
+## 第 3 层：六类知识文件详解
 
 ### 术语表 (GLOSSARY)
 
@@ -364,7 +375,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 
 ---
 
-## Layer 4: 模板
+## 第 4 层：模板
 
 以下模板在生成对应文件时使用。
 
@@ -491,7 +502,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 
 ---
 
-## Layer 5: 异常与边界
+## 第 5 层：异常与边界
 
 ### 边界判断
 
@@ -520,10 +531,11 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 | 「判断新鲜度时保守一点，不确定就标记 ⚠️」 | 频繁的假过期警报会让用户不信任标记。只有确实发现不一致时才标记 ⚠️，无法判断就说「无法判断」。 |
 | 「给知识文件加上时间戳/hash 更精确」 | 额外的元数据增加认知负担和维护成本。AI 阅读对比代码已经足够好，简单方案就是好方案。 |
 | 「这个文件和 AGENTS.md 的链接断了，自动修」 | AGENTS.md 是用户的主入口文件。自动修改可能覆盖用户的手动编排意图。提示用户，让用户决定。 |
+| 「归档完成后就顺手更新知识库」 | 归档后的知识更新必须先提示用户，且项目可能不用 specline-knowledge 管理知识库。确认落点后再写。 |
 
 ---
 
-## Verification Checklist
+## 验证清单
 
 技能实现完成后，自查：
 
@@ -533,7 +545,7 @@ AGENTS.md  →  CLAUDE.md  →  CURSOR.md  →  .cursor/rules/
 - [ ] 六类知识文件（GLOSSARY/ARCHITECTURE/CONVENTIONS/DECISIONS/REFERENCE/HOWTOS）全部支持
 - [ ] 生成的知识文件为纯 Markdown，无 front matter / 元数据
 - [ ] 不确定的内容标记了 `<!-- UNVERIFIED -->`
-- [ ] 与 pipeline/quickfix 无联动，纯手动触发
-- [ ] 支持按需检查（指定文件名）和全量扫描两种模式
+- [ ] 与 pipeline/quickfix 无自动联动；archive-origin 更新必须用户确认
+- [ ] 支持按需检查（指定文件名）、全量扫描、已归档 change 的增量更新三种模式
 - [ ] 冲突处理覆盖：已有入口文件、已有同名知识文件、孤儿文件
 - [ ] 未覆盖/不适用的情况有降级策略（代码量极小、无模块结构等）

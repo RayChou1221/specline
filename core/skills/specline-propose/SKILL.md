@@ -5,7 +5,7 @@ description: >-
   直接按内联模板创建全部 Artifact，不依赖外部 CLI。
 ---
 
-## Layer 1: TL;DR
+## 第 1 层：速览
 
 > **一句话**：根据自然语言需求生成完整的 Spec 规划文件。
 > **入口**：`/specline-pipeline <需求>` 或由编排者通过 Task 工具派发
@@ -28,15 +28,15 @@ specline/changes/<change-name>/
 
 ---
 
-## Layer 2: Happy Path
+## 第 2 层：主流程
 
-**Input**: 用户需求描述（自然语言），由编排者传入 change-name。
+**输入**：用户需求描述（自然语言），由编排者传入 change-name。
 
-### Step 1: 理解需求并推导 change name
+### 步骤 1：理解需求并推导 change name
 
 如果编排者没有传入明确的 change name，从需求描述推导 kebab-case 名称（如 "添加用户登录功能" → `add-user-login`）。
 
-### Step 2: 创建 Change 目录
+### 步骤 2：创建 Change 目录
 
 ```bash
 specline gate new --change "<name>"
@@ -44,7 +44,7 @@ specline gate new --change "<name>"
 
 创建 `specline/changes/<name>/` 目录及必要的元数据文件。
 
-### Step 3: 按顺序生成 4 个 Artifact
+### 步骤 3：按顺序生成 4 个 Artifact
 
 | 顺序 | Artifact | 路径 | 内容要点 |
 |------|----------|------|---------|
@@ -63,7 +63,7 @@ specline gate new --change "<name>"
 
   还包括：Impact（影响哪些系统）
 
-- **spec.md**：H1 标题含 "Specification"，包含 `## Purpose` 和 `## Requirements`，每个 Requirement 至少 1 个 Scenario，每个 Scenario 含 `**WHEN**`/`**THEN**` 配对，至少覆盖 Happy Path 和 1 个异常场景
+- **spec.md**：H1 标题含 "Specification"，包含 `## Purpose` 和 `## Requirements`，每个 Requirement 至少 1 个 Scenario，每个 Scenario 含 `**WHEN**`/`**THEN**` 配对，至少覆盖正常路径（Happy Path）和 1 个异常场景
 
 - **design.md**：包含 Architecture Overview、Key Design Decisions（每项说明选择理由和替代方案）、Data Flow、Component Interaction、**Architecture Impact Analysis**（侵入点/模块边界/依赖方向/数据影响/接口兼容性分析，每项标注置信度 ✅/⚠️）、**对外接口契约**（如有 specline-test-writer 负责的集成/E2E 测试；CLI 命令/HTTP 端点/模块导出签名）
 
@@ -81,7 +81,7 @@ specline gate new --change "<name>"
 
   > 💡 **并行度自检**：统计 tasks.md 中 `Depends: (none)` 的任务占比 — ≥ 60% 通过，< 60% 则重新拆解（最多 2 次），仍不达标则记录警告。
 
-### Step 4: 验证完整性
+### 步骤 4：验证完整性
 
 ```bash
 specline gate artifacts --change "<name>" --json
@@ -89,7 +89,7 @@ specline gate artifacts --change "<name>" --json
 
 确保 proposal/design/tasks/specs 四个文件都已存在。
 
-### Step 5: 输出完成摘要
+### 步骤 5：输出完成摘要
 
 - Change 名称和位置
 - 4 个文件生成确认
@@ -97,7 +97,7 @@ specline gate artifacts --change "<name>" --json
 
 ---
 
-## Layer 3: 规范详解
+## 第 3 层：规范详解
 
 ### tasks.md 拆分规范
 
@@ -152,7 +152,7 @@ specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」
 
 ---
 
-### Guardrails
+### 约束
 
 - 所有文件直接写入 `specline/changes/<name>/`，不调用外部 CLI
 - 先读已有 dependency 再生成后续文件
@@ -174,12 +174,12 @@ specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」
 | "并行度 50% 够了，不用追求 60%" | 60% 不是硬指标，但 <50% 意味着功能边界划分不合理——大概率任务之间耦合太紧。 |
 | "测试文件归属表格我后面补" | 补的从来不会补。没有归属表格，coding agent 和 test-writer 会踩到对方的文件。 |
 
-## Verification Checklist
+## 验证清单
 
 生成 Spec 规划文件后，自查：
 
 - [ ] proposal.md 包含：What / Why / In Scope / Out of Scope（两段显式分开）/ Impact
-- [ ] spec.md 包含：Purpose + Requirements，每个 Requirement ≥1 Scenario（含 WHEN/THEN），Happy Path + 至少 1 个异常场景
+- [ ] spec.md 包含：Purpose + Requirements，每个 Requirement ≥1 Scenario（含 WHEN/THEN），正常路径（Happy Path）+ 至少 1 个异常场景
 - [ ] design.md 包含：Architecture Overview、Key Design Decisions（理由+替代方案）、Data Flow、Component Interaction、**Architecture Impact Analysis**（侵入点/模块边界/依赖方向/数据影响/接口兼容性，每项带置信度 ✅/⚠️）、**对外接口契约**（如有 test-writer 测试任务；CLI/HTTP/模块导出表格）
 - [ ] tasks.md 每个任务标注完整（Type/Depends/Covers/Testable/Files），Depends: (none) 占比 ≥ 60%，第 1 批次 Files 无重叠
 - [ ] 测试文件归属表格存在：单元测试归属 coding agent，集成/E2E 归属 test-writer
