@@ -28,6 +28,22 @@ instructions: |
   3. **Specline 配置**：读取 `specline/config.yaml` → `context` 和 `project` 字段
   4. **代码库探索**（兜底）：扫描顶层目录结构，推断模块分层和依赖方向
 
+  #### Step 1.6: 消费澄清上下文（可选）
+
+  如果编排者传入 `clarification_context`，必须将其视为规划输入的一部分，不允许只留在对话中。支持字段：
+  - `risk_level`: `none | low | medium | high`，表示当前需求歧义风险级别
+  - `confirmed_decisions`: 已由用户确认的决策，通常包含 `decision` 和 `source`
+  - `assumed_decisions`: 为保持流程推进而采用的假设/推荐默认值，通常包含 `decision`、`recommended_answer`、`rationale`、`risk`
+  - `deferred_questions`: 延后处理的问题，通常包含 `question`、`default`、`reason_deferred`、`implementation_constraint`
+
+  生成 Artifact 时必须显式承载这些信息：
+  - `proposal.md`: 在 Impact 或独立 Assumptions/Open Risks 小节中写明风险级别、关键假设、延后问题和开放风险。
+  - `design.md`: 在 Key Design Decisions 中写明已确认决策和假设决策，并标注来源（用户确认、推荐默认值、显式假设或延后）。
+  - `spec.md`: Requirements/Scenarios 必须反映已确认答案或已采用默认值；若行为仍取决于延后问题，必须把限制和风险写入需求或场景。
+  - `tasks.md`: 任务的 Covers/Testable/描述必须体现相关假设、约束或延后项；当某个 `deferred_questions` 项仍会阻塞不可逆实现工作时，不得创建依赖该未决选择的不可逆任务，只能创建澄清、验证、探索或可回滚的准备任务，并明确记录开放风险。
+
+  不得隐藏会改变实现方向、公开行为、数据模型、安全姿态、兼容性或任务顺序的假设。
+
   #### Step 2: 创建目录结构
 
   ```bash

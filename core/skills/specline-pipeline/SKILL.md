@@ -56,6 +56,13 @@ Session 通过 `specline gate bind <session_id> <change>` 绑定到 Pipeline。
 
 **子 Agent 确认行为**：当策略为 `minimal` 或 `none` 时，编排者应在派发子 Agent 时传递 `HUMAN_GATE_POLICY=<policy>` 上下文，告知子 Agent 跳过所有 {{CONFIRM}} 交互（如 spec_ambiguity 暂停、skill 级确认等），直接采用默认安全选项继续执行。编排者自身在测试失败处理中的 spec_ambiguity 暂停也应改为记录 WARNING 事件日志后继续。
 
+**SPEC 澄清中断行为**：`pipeline.human_gate_policy` 同时控制 SPEC 阶段 Ambiguity Scan 是否可以打断用户：
+- `full`：仅在 blocking ambiguity 存在时允许打断，最多 1-3 个聚焦问题；HG1 必须展示确认过的决策、假设、未解决项和 warning default。
+- `minimal`：不打断用户；采用安全推荐默认值继续，并把 warning default、假设和风险写入 `clarification_context`，HG1 自动通过时记录 WARNING 事件。
+- `none`：不打断用户；只记录假设、风险和 deferred questions，不要求用户确认，也不引入任何 {{CONFIRM}}。
+
+普通 `/specline-pipeline` 请求默认保持自动化，不展示默认问卷。只有用户明确要求 `strict`、`grill`、深度追问或面试式澄清时，才进入扩展澄清预算；即使在 strict/grill 路径，每个问题也必须是决策型问题，包含推荐答案和选项。
+
 ### 入口模式
 
 1. **新建流水线**: `/specline-pipeline <自然语言需求>`
@@ -160,7 +167,50 @@ specline gate new --change "<kebab-case-name>"
 
 > 📋 完整 JSON Schema 见 [附录 A](#附录-a-pipeline-statejson-完整-schema)
 
-#### Step 2: 启动 specline-spec-creator
+#### Step 2: Ambiguity Scan（风险触发，不是默认问卷）
+
+在启动 `specline-spec-creator` 前，编排者先做一次轻量 Ambiguity Scan。它只判断用户需求中是否存在会改变实现方向的模糊点，不把正常缺省信息变成问卷。
+
+分类规则：
+
+1. **Default path（无实质模糊）**：如果现有需求足以选择实现方向，直接进入 Step 3，不提问，也不传额外澄清上下文。
+2. **Non-blocking ambiguity（非阻断模糊）**：如果不确定性不会改变实现方向、公开行为、数据模型、安全姿态、兼容性或任务排序，则记录为 assumptions/risks，继续进入 Step 3，不打断用户。
+3. **Blocking ambiguity（阻断模糊）**：仅当不问清楚可能改变实现方向、公开行为、数据模型、安全姿态、兼容性或任务排序时才判定为 blocking。
+4. **Explicit strict/grill path（显式严格澄清）**：只有用户明确要求 strict、grill、深度追问或面试式澄清时，才扩大问题预算；普通 pipeline 请求绝不自动进入该路径。
+
+Blocking ambiguity 的处理由 `pipeline.human_gate_policy` 决定：
+
+- `full`：可以先问 1-3 个聚焦问题。每个问题必须说明被决定的事项、为什么会改变实现方向、推荐答案、小选项集，以及如果后续必须继续时采用的默认值。
+- `minimal`：不得打断用户。采用安全推荐默认值继续，把默认值、理由和风险作为 warning default 写入 `clarification_context`，并在 HG1 自动通过时记录 warning/assumption。
+- `none`：不得打断用户。只记录 assumptions、risks 和 deferred questions，不把默认值包装成用户已确认决策。
+
+若 Ambiguity Scan 产生上下文，传给 `specline-spec-creator` 的 prompt 中必须包含：
+
+```yaml
+clarification_context:
+  risk_level: none | low | medium | high
+  confirmed_decisions:
+    - decision: "..."
+      source: "user"
+  assumed_decisions:
+    - decision: "..."
+      recommended_answer: "..."
+      rationale: "..."
+      risk: "..."
+      policy: "full|minimal|none"
+  deferred_questions:
+    - question: "..."
+      default: "..."
+      reason_deferred: "..."
+      implementation_constraint: "..."
+      blocking: true|false
+  warnings:
+    - "..."
+```
+
+约束：`confirmed_decisions` 只能放用户明确回答或明确同意的内容；`minimal` 和 `none` 模式下不得制造用户中断，必须把未确认内容记录为 assumption、warning 或 deferred question。
+
+#### Step 3: 启动 specline-spec-creator
 
 specline-spec-creator 子 Agent 的职责是根据内联模板直接生成全部规划文件：
 - `proposal.md` — 需求提案（What/Why/Scope）
@@ -168,7 +218,7 @@ specline-spec-creator 子 Agent 的职责是根据内联模板直接生成全部
 - `tasks.md` — 任务拆解清单（含 Type/Depends/Covers/Files 标注）
 - `specs/<capability>/spec.md` — 功能规格（Requirements/Scenarios）
 
-{{DISPATCH}}，role="specline-spec-creator"，描述中传入 change name 和自然语言需求，让 specline-spec-creator 根据内联模板直接生成。
+{{DISPATCH}}，role="specline-spec-creator"，描述中传入 change name、自然语言需求、`HUMAN_GATE_POLICY=<policy>`，以及 Ambiguity Scan 产生的可选 `clarification_context`。让 specline-spec-creator 根据内联模板直接生成，并把 confirmed decisions、assumptions、deferred questions、risk level 和 warnings 写入规划 Artifact。
 
 > **任务标注规范**：tasks.md 每个任务必须包含：
 > - `Type`: frontend | backend | infra | db | config | docs
@@ -185,7 +235,7 @@ NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 jq --arg time "$NOW" '.updated_at = $time | .phases.spec.sub_phases["specline-spec-creator"] = {"status": "completed", "completed_at": $time}' "$STATE_FILE" > tmp && mv tmp "$STATE_FILE"
 ```
 
-#### Step 3: 审核全部规划文件（specline-spec-reviewer）
+#### Step 4: 审核全部规划文件（specline-spec-reviewer）
 
 specline-spec-reviewer 审核三份文件：
 1. `specs/` 下所有 spec.md 的完整性和一致性
@@ -196,7 +246,7 @@ specline-spec-reviewer 审核三份文件：
 
 若 rejected：将 feedback 反馈给用户修改，或手动编辑相应文件后重新审核（最多 3 次循环）。
 
-#### Step 4: Spec Gate
+#### Step 5: Spec Gate
 
 ```bash
 specline gate spec --change "<name>"
@@ -206,13 +256,17 @@ specline gate spec --change "<name>"
 
 exit code 0 = 通过，写入 passed。exit code != 0 = 失败，读取 stderr 展示给用户。
 
-#### Step 5: 人工确认 (Human Gate 1) 🟡
+#### Step 6: 人工确认 (Human Gate 1) 🟡
 
-> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_1.passed = true`，进入 Phase 2。
+> **策略判断**：读取 `specline/config.yaml` → `pipeline.human_gate_policy`。若为 `minimal` 或 `none` → 跳过此 HG，直接写入 `human_gate_1.passed = true`，进入 Phase 2；同时把 `clarification_context` 中的 assumptions、deferred questions、warning defaults 和风险摘要记录到事件日志或阶段摘要，不能静默丢弃。
 
-Spec Gate 通过后，使用 {{CONFIRM}} 请求确认。展示内容包括：需求提案摘要、功能需求列表、任务拆解概览（含并行组）。
+Spec Gate 通过后，`full` 策略使用 {{CONFIRM}} 请求确认。展示内容包括：需求提案摘要、功能需求列表、任务拆解概览（含并行组），以及 Ambiguity Scan/Spec Creator 产出的：
 
-Human Gate 1 具体交互：使用 {{CONFIRM}}，title="确认 Spec 和任务规划"，选项：`approve`（确认通过，继续编码）/ `reject`（不通过，手动修改后重新审核）。
+- 用户已确认的关键决策。
+- 未经确认但将采用的 assumptions 和 recommended defaults。
+- deferred questions、unresolved items、warning defaults 及其实现风险。
+
+Human Gate 1 具体交互：使用 {{CONFIRM}}，title="确认 Spec 和任务规划"，选项：`approve`（确认通过，继续编码）/ `reject`（不通过，手动修改后重新审核）。若 HG1 因 `minimal` 或 `none` 跳过，编排者不得补问用户；只记录 warnings/assumptions，并保证后续 reviewer/gate 能看到这些风险。
 
 ### Phase 2: CODING
 
@@ -597,7 +651,7 @@ done
 
 每阶段完成后，编排者自查：
 
-- [ ] **SPEC 阶段**：4 Artifact 齐全（proposal/design/tasks/specs）；Spec Gate 通过；HG1 已确认；spec-review.json status=approved
+- [ ] **SPEC 阶段**：4 Artifact 齐全（proposal/design/tasks/specs）；Ambiguity Scan 已完成且必要的 `clarification_context` 已传递；Spec Gate 通过；HG1 已确认或按策略记录 warnings/assumptions 后跳过；spec-review.json status=approved
 - [ ] **CODING 阶段**：全部批次完成；每个 task 产出报告存在；tasks.md checkbox 全部 [x]；Build Gate 通过（含契约签名检查）；Testable=true 任务的 test_files 非空
 - [ ] **CODE REVIEW 阶段**：code-review.json 存在；error 计数 = 0；Lint Gate 通过；HG2 已处理
 - [ ] **TEST 阶段**：test_framework 已写入状态文件；test-unit/integration/e2e Gate 全绿
