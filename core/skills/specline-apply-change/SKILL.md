@@ -31,10 +31,9 @@ metadata:
 
 **开始前请确认：**
 - [ ] Change 已选中（`/specline-pipeline --change <name>`）
-- [ ] 已读取 proposal.md（知道做什么）
-- [ ] 已读取 spec.md（知道需求和场景）
-- [ ] 已读取 design.md（知道技术决策）
-- [ ] 已读取 tasks.md（知道实现清单）
+- [ ] 已运行 `specline gate contract --change "<name>"` 判断合同状态
+- [ ] 若存在 approved + fresh `execution-contract.md`，已优先读取它作为实现权威
+- [ ] 已读取 proposal.md / spec.md / design.md / tasks.md 作为 reference artifacts
 
 ## 第 2 层：主流程
 
@@ -57,9 +56,20 @@ metadata:
    - `schemaName`：当前使用的工作流（如 "spec-driven"）
    - 哪个 Artifact 包含 tasks（spec-driven 通常是 "tasks"，其他 schema 以状态为准）
 
-3. **读取上下文文件**
+3. **检查并读取 Execution Contract**
 
-   读取 `specline/changes/<name>/` 下的规划文件：
+   先运行：
+   ```bash
+   specline gate contract --change "<name>"
+   ```
+
+   - 通过且存在 `execution-contract.md`：优先读取它，作为 primary implementation authority。
+   - 旧 change 无合同且策略为 `legacy_policy: warn`：告知用户正在 legacy mode，继续读取原规划文件。
+   - 合同 stale / missing / unapproved 且不是 legacy warn：暂停，不实现，建议回到 `/specline-pipeline --change <name>` 重建合同。
+
+4. **读取上下文文件**
+
+   读取 `specline/changes/<name>/` 下的规划文件作为 reference artifacts：
    - `proposal.md` — 做什么与为什么
    - `specs/<capability>/spec.md` — Requirements 与 Scenarios
    - `design.md` — 架构与决策
@@ -67,13 +77,13 @@ metadata:
 
    检查 task 完成度：统计 `- [ ]`（未完成）与 `- [x]`（已完成）。
 
-4. **展示当前进度**
+5. **展示当前进度**
 
    展示：
    - 进度："N/M tasks complete"
    - 剩余任务概览
 
-5. **实现 tasks（循环直到完成或阻塞）**
+6. **实现 tasks（循环直到完成或阻塞）**
 
    对每个待完成 task：
    - 展示当前正在处理的 task
@@ -88,7 +98,7 @@ metadata:
    - 遇到错误或阻塞 → 报告并等待指引
    - 用户中断
 
-6. **完成或暂停时展示状态**
+7. **完成或暂停时展示状态**
 
    展示：
    - 本 session 完成的 tasks
@@ -180,7 +190,7 @@ What would you like to do?
 
 每完成一个任务后自查，全部完成后终查：
 
-- [ ] 开始前已读 proposal.md / spec.md / design.md / tasks.md
+- [ ] 开始前已运行 Contract Gate；如合同 approved + fresh，已优先读取 execution-contract.md
 - [ ] 每个任务的实现范围未超出 Files 声明
 - [ ] 每个 Testable=true 的任务产出了测试文件（在 tests/unit/ 或 tests/models/）
 - [ ] tasks.md 中每个已完成任务的 `[ ]` 已改为 `[x]`

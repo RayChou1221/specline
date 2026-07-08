@@ -29,7 +29,7 @@ description: 轻量修改 Skill —— 小改动用 quickfix，大功能用 pipe
 **你不做：**
 - 创建 proposal.md、design.md、tasks.md、specs/ 等规划文档
 - 启动任何 specline-* 子 Agent
-- 创建 `.pipeline-state.json` 或 `.pipeline-sessions.json`
+- 创建 `.pipeline-state.json`、`.pipeline-sessions.json` 或 `execution-contract.md`
 - 写新测试、跑集成/E2E 测试
 
 ### 流程概览
@@ -42,6 +42,10 @@ description: 轻量修改 Skill —— 小改动用 quickfix，大功能用 pipe
 ### Hook 透明
 
 Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、postToolUse、subagentStart、beforeShellExecution）自动透明放行，不产生任何拦截或提醒。
+
+### Execution Contract 策略
+
+Quickfix 默认遵循 `pipeline.execution_contract.quickfix_policy: skip`：不生成 `execution-contract.md`，不要求 Contract Gate。若实现过程中发现范围扩大到需要 pipeline（例如 >3 文件、架构/API 变化、需要新增测试），立即暂停并建议转 `/specline-pipeline`；升级为 pipeline 后必须进入完整 Execution Contract 流程。
 
 ---
 
@@ -195,7 +199,7 @@ Quickfix 不绑定 Pipeline session，所有 Hook（sessionStart、preToolUse、
 | 架构变更 | 无新架构/新组件 | 需要新组件/新 API |
 | 测试 | 不需要新测试 | 需要写新测试 |
 | 典型场景 | 修 bug、改配置、文档微调 | 新增功能、重构 |
-| 产出 | summary.md + files-changed.json | proposal/design/tasks/specs + 全部测试 |
+| 产出 | summary.md + files-changed.json | proposal/design/tasks/specs + execution-contract.md + 全部测试 |
 | 人工确认 | 0 个 | 3 个 |
 | 耗时 | 1-3 分钟 | 10-30 分钟 |
 

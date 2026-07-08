@@ -121,7 +121,10 @@ specline/changes/                  specline/changes/
    - 使用的 schema
    - 归档位置
    - specs 是否已同步（如适用）
+   - Contract 状态：approved/fresh、stale、legacy change not required，或 quickfix skipped
    - 任何警告说明（Artifact/task 未完成）
+
+   如果存在 `execution-contract.md`，归档时随 change 一起保留。旧 change 没有合同不阻塞归档；摘要写明 `Contract: legacy change, not required`。
 
 7. **归档后知识库更新建议**
 
@@ -189,6 +192,7 @@ specline/changes/                  specline/changes/
 **Schema:** <schema-name>
 **Archived to:** specline/changes/archive/YYYY-MM-DD-<name>/
 **Specs:** ✓ Synced to main specs (or "No delta specs" or "Sync skipped")
+**Contract:** Approved and fresh / Legacy change, not required / Skipped by quickfix policy
 **Knowledge:** No update suggested / Suggested and skipped / Updated <path>
 
 All artifacts complete. All tasks complete.
@@ -201,7 +205,7 @@ All artifacts complete. All tasks complete.
 - 未提供 change 时，始终提示用户选择
 - 使用 Artifact 图（`specline gate artifacts --json`）检查完成度
 - 警告不阻塞归档，只需告知并确认
-- 移动到 archive 时保留 `.specline.yaml`（随目录一起移动）
+- 移动到 archive 时保留 `.specline.yaml` 和 `execution-contract.md`（如存在，随目录一起移动）
 - 清晰展示发生了什么
 - 如果请求 sync，使用 specline-sync-specs 方案（Agent 驱动）
 - 如果存在 delta specs，始终执行 sync 评估，并在提示用户前展示合并摘要

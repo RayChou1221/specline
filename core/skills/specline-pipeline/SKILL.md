@@ -270,9 +270,31 @@ Spec Gate 通过后，`full` 策略使用 {{CONFIRM}} 请求确认。展示内�
 
 Human Gate 1 具体交互：使用 {{CONFIRM}}，title="确认 Spec 和任务规划"，选项：`approve`（确认通过，继续编码）/ `reject`（不通过，手动修改后重新审核）。若 HG1 因 `minimal` 或 `none` 跳过，编排者不得补问用户；只记录 warnings/assumptions，并保证后续 reviewer/gate 能看到这些风险。
 
+#### 步骤 6.5：生成并校验 Execution Contract
+
+HG1 通过或按策略自动通过后，进入 CODING 前必须生成 `specline/changes/<name>/execution-contract.md`。该文件是从 `proposal.md`、`design.md`、`tasks.md` 和 `specs/**/spec.md` 派生的实现交接合同，不是新的 source of truth。
+
+合同必须包含：Metadata、Intent Lock、Approved Behavior、Design Constraints、Execution Tasks、Test Obligations、Review Gates、Escalation Rules。Metadata 中记录 Source Artifacts Hash、Approval、Approved At、Approved By。
+
+执行步骤：
+
+```bash
+# 生成合同后，写入 .pipeline-state.json 的 contract 字段
+specline gate contract --change "<name>"
+```
+
+规则：
+- 新 change 必须通过 Contract Gate 才能进入 CODING。
+- 如果合同缺失、未批准、source hash 不匹配或缺少 task/files/testable 映射，Contract Gate 失败并暂停流水线。
+- 如果合同生成过程中发现未映射 Requirement、未映射 task 或新增假设，不能自动批准；必须回到 SPEC 修正或请求用户确认。
+- `pipeline.execution_contract.approval_policy: inherit_hg1` 时，只有合同完全派生且无新增假设，才能记录 `approved_by: human_gate_1`。
+- 旧 change 没有合同字段时按 `legacy_policy` 处理；默认 `warn`，不阻塞恢复。
+
 ### 阶段 2：CODING
 
-> **并行加速**：Human Gate 1 通过后，**同时**启动 coding 和 specline-test-writer。specline-test-writer 是黑盒的——读取 Spec（验收标准）和 design.md（对外接口契约），不需要实现代码。两者并行可节省 specline-test-writer 的编写时间。
+> **合同前置**：进入 CODING 前先运行 `specline gate contract --change "<name>"`。通过后，coding/test/review 相关子 Agent 的 primary implementation authority 是 `execution-contract.md`；proposal/spec/design/tasks 作为 reference artifacts。
+
+> **并行加速**：Execution Contract 通过后，**同时**启动 coding 和 specline-test-writer。specline-test-writer 是黑盒的——读取 Spec（验收标准）和 design.md（对外接口契约），不需要实现代码。两者并行可节省 specline-test-writer 的编写时间。
 
 #### 步骤 6：并行启动（test-writer + DAG 构建）
 
@@ -655,7 +677,7 @@ done
 
 每阶段完成后，编排者自查：
 
-- [ ] **SPEC 阶段**：4 Artifact 齐全（proposal/design/tasks/specs）；Ambiguity Scan 已完成且必要的 `clarification_context` 已传递；Spec Gate 通过；HG1 已确认或按策略记录 warnings/assumptions 后跳过；spec-review.json status=approved
+- [ ] **SPEC 阶段**：4 Artifact 齐全（proposal/design/tasks/specs）；Ambiguity Scan 已完成且必要的 `clarification_context` 已传递；Spec Gate 通过；HG1 已确认或按策略记录 warnings/assumptions 后跳过；spec-review.json status=approved；Execution Contract 已生成、approved 且 Contract Gate 通过
 - [ ] **CODING 阶段**：全部批次完成；每个 task 产出报告存在；tasks.md checkbox 全部 [x]；Build Gate 通过（含契约签名检查）；Testable=true 任务的 test_files 非空
 - [ ] **CODE REVIEW 阶段**：code-review.json 存在；error 计数 = 0；Lint Gate 通过；HG2 已处理
 - [ ] **TEST 阶段**：test_framework 已写入状态文件；test-unit/integration/e2e Gate 全绿

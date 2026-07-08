@@ -6,7 +6,7 @@
 #   specline-pipeline-gate.sh <phase> --change <change-name>
 #
 # Phases:
-#   new | list | artifacts | spec | semantic | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status
+#   new | list | artifacts | spec | semantic | contract | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status
 #
 # Exit codes:
 #   0 = 通过
@@ -535,11 +535,23 @@ YAML
   "current_phase": "spec",
   "current_step": "spec-creator",
   "phases": {
-    "spec": { "status": "in_progress", "retry_count": 0, "sub_phases": {}, "gates": { "spec_gate": { "passed": null }, "human_gate_1": { "passed": null } } },
+    "spec": { "status": "in_progress", "retry_count": 0, "sub_phases": {}, "gates": { "spec_gate": { "passed": null }, "contract_gate": { "passed": null }, "human_gate_1": { "passed": null } } },
     "coding": { "status": "pending", "tasks": [], "sub_phases": {}, "gates": { "build_gate": { "passed": null } } },
     "code_review": { "status": "pending", "retry_count": 0, "gates": { "lint_gate": { "passed": null }, "human_gate_2": { "passed": null } } },
     "test": { "status": "pending", "framework": null, "sub_phases": { "unit": { "status": "pending", "gates": { "test_unit_gate": { "passed": null } } }, "integration": { "status": "pending", "gates": { "test_integration_gate": { "passed": null } } }, "e2e": { "status": "pending", "gates": { "test_e2e_gate": { "passed": null } } } } },
     "archive": { "status": "pending", "gates": { "human_gate_3": { "passed": null }, "archive_gate": { "passed": null } } }
+  },
+  "contract": {
+    "schema_version": 1,
+    "status": "missing",
+    "path": "execution-contract.md",
+    "source_hash": null,
+    "contract_hash": null,
+    "generated_at": null,
+    "approved": false,
+    "approved_at": null,
+    "approved_by": null,
+    "last_checked_at": null
   }
 }
 JSON
@@ -1400,6 +1412,32 @@ gate_semantic() {
   pass "✅ Semantic Gate 全部通过"
 }
 
+
+gate_contract() {
+  if [ -z "$CHANGE" ]; then
+    fail "需要 --change <name>"
+  fi
+
+  local checker="$PROJECT_ROOT/specline/bin/contract-check.mjs"
+  if [ ! -f "$checker" ]; then
+    checker="$SCRIPT_DIR/contract-check.mjs"
+  fi
+  if [ ! -f "$checker" ]; then
+    fail "contract-check.mjs 不存在"
+  fi
+
+  local args=("$PROJECT_ROOT" "$CHANGE")
+  if [ "${1:-}" = "--json" ]; then
+    args+=("--json")
+  fi
+
+  if node "$checker" "${args[@]}"; then
+    write_gate_passed "phases.spec.gates.contract_gate"
+    return 0
+  fi
+  return 1
+}
+
 # ===== 分派 =====
 
 case "$PHASE" in
@@ -1417,6 +1455,13 @@ case "$PHASE" in
     ;;
   semantic)
     gate_semantic "$@"
+    ;;
+  contract)
+    if [ ${#POSITIONAL_ARGS[@]} -gt 0 ]; then
+      gate_contract "${POSITIONAL_ARGS[@]}"
+    else
+      gate_contract
+    fi
     ;;
   build)
     gate_build
@@ -1448,7 +1493,7 @@ case "$PHASE" in
     ;;
   *)
     echo "未知 phase: $PHASE"
-    echo "可用: new | list | artifacts | spec | semantic | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status"
+    echo "可用: new | list | artifacts | spec | semantic | contract | build | lint | test-unit | test-integration | test-e2e | detect-modules | bind | archive | status"
     exit 2
     ;;
 esac

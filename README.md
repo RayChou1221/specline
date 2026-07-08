@@ -2,7 +2,7 @@
 
 **Spec 驱动 AI 编码流水线**，内置确定性质量门禁。
 
-自然语言需求 → 自动走完 编写规格 → 编码 → 审查 → 测试 → 归档 全流程：
+自然语言需求 → 自动走完 编写规格 → 执行合同 → 编码 → 审查 → 测试 → 归档 全流程：
 
 ```
 /specline-pipeline "实现用户登录功能"
@@ -34,11 +34,11 @@
 **完整流水线**（新功能、重构）：
 
 ```
-自然语言需求 → Spec → 审核 → 编码 → 审查 → 测试 → 归档
-                ↑       ↑      ↑      ↑      ↑      ↑
-           spec-    spec-  前后端/  code/ 单元/   ✓ 完成
-          creator  reviewer config config  集成/
-                  并行              reviewer  E2E
+自然语言需求 → Spec → 审核 → 执行合同 → 编码 → 审查 → 测试 → 归档
+                ↑       ↑        ↑        ↑      ↑      ↑      ↑
+           spec-    spec-  approved+fresh 前后端/ code/ 单元/   ✓ 完成
+          creator  reviewer  contract    config config  集成/
+                           hash 绑定      并行  reviewer  E2E
 ```
 
 **轻量修复**（修 bug、改配置、文档微调）：
@@ -54,6 +54,7 @@
 
 - **需求驱动**：自然语言 → 结构化规格文档（Requirements + Scenarios + WHEN/THEN）
 - **跨平台**：同一套 Spec 驱动流水线，适配 Cursor / Claude Code / Codex / OpenCode
+- **执行合同**：SPEC 确认后生成 `execution-contract.md`，绑定规划 artifact hash；CODING 前必须 approved + fresh
 - **并行编码**：自动按前端/后端/config 拆分任务，同批次并发派发 Coding Agent
 - **TDD 白盒测试**：无依赖任务自动启用 TDD 模式（先写单测 → 确认失败 → 最小实现 → 重构），与黑盒 test-writer 并行协作
 - **确定性门禁**：每个阶段用 Shell 脚本的退出码判定是否通过，不做模糊判断
@@ -146,7 +147,9 @@ specline init --platform <list>
 │      ├── config.yaml                                        │
 │      ├── platforms.yaml                                     │
 │      ├── changes/                                           │
-│      └── bin/gate.sh                                        │
+│      ├── templates/execution-contract.md                    │
+│      ├── bin/gate.sh                                        │
+│      └── bin/contract-check.mjs                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -185,7 +188,7 @@ Specline 提供两种工作流，按变更规模选择：
 | 架构变更 | 无新架构/新组件 | 需要新组件/新 API |
 | 测试 | 不需要新测试 | 需要写新测试 |
 | 典型场景 | 修 bug、改配置、文档微调 | 新增功能、重构 |
-| 产出 | summary.md + files-changed.json | proposal/design/tasks/specs + 全部测试 |
+| 产出 | summary.md + files-changed.json | proposal/design/tasks/specs + execution-contract.md + 全部测试 |
 | 人工确认 | 0 个 | 3 个 |
 | 耗时 | 1-3 分钟 | 10-30 分钟 |
 
@@ -196,15 +199,18 @@ Specline 提供两种工作流，按变更规模选择：
 ```
 PHASE 1: SPEC（规格）
   specline-spec-creator 生成 4 个规划文件
-    ├── proposal.md    — 需求提案（What/Why/Scope）
+    ├── proposal.md     — 需求提案（What/Why/Scope）
     ├── specs/*/spec.md — 功能规格（Requirements/Scenarios/WHEN-THEN）
-    ├── design.md      — 技术设计（架构/数据流/决策）
-    └── tasks.md       — 任务清单（Type/Depends/Covers/Testable/Files + [ ] 进度标记）
+    ├── design.md       — 技术设计（架构/数据流/决策）
+    └── tasks.md        — 任务清单（Type/Depends/Covers/Testable/Files + [ ] 进度标记）
   → specline-spec-reviewer 审核
   → Gate: grep + jq 格式校验 + semantic 语义检查
   → 🟡 人工确认 Spec 和任务规划
+  → execution-contract.md（派生实现合同，记录 source artifact hash）
+  → Gate: contract（approved + fresh + task/files/testable 覆盖）
 
 PHASE 2: CODING（编码）
+  以 execution-contract.md 作为 primary implementation authority
   解析 tasks.md → 按依赖 DAG 分层 → 同批次前后端/config Agent 并发
   无依赖 + 可测试任务 → 自动启用 TDD 模式（RED-GREEN-REFACTOR）
   每完成一个任务，[ ] 自动标记为 [x]
@@ -231,7 +237,7 @@ PHASE 5: ARCHIVE（归档）
 |------|------|
 | `specline init [--platform <list>]` | 初始化 Specline 项目，支持多平台部署 |
 | `specline sync [--dry-run] [--platform <list>]` | 同步模板文件到最新版本 |
-| `specline gate <subcommand>` | Gate 门禁 CLI 包装（spec/build/lint/test/list） |
+| `specline gate <subcommand>` | Gate 门禁 CLI 包装（spec/semantic/contract/build/lint/test/list） |
 | `specline hook session-start [--platform <p>]` | 跨平台 SessionStart hook |
 | `specline platforms` | 查看已部署平台列表 |
 | `specline update` | 检查 CLI 新版本 |
@@ -272,6 +278,7 @@ PHASE 5: ARCHIVE（归档）
 | 门禁 | 检查内容 |
 |------|---------|
 | Spec | 结构性检查 + 语义检查（Covers 引用悬空、依赖环路、异常场景缺失、模糊需求） |
+| Contract | `execution-contract.md` 存在、approved、source hash fresh、task/files/testable 映射完整 |
 | Build | 编译检查 + Testable 任务单元测试文件存在性 |
 | Lint | Linter 退出码 + code-review.json error 数量 |
 | Test | 测试框架退出码 + 覆盖率阈值 |
