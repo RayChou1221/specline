@@ -454,7 +454,8 @@ specline gate list --json
 
 A. 转化 — 开始实现：/specline-pipeline <change-name>
 B. 同步 — 更新已有 change 的设计，写入 design.md
-C. 搁置 — 保存到 notes/<date>-explore-notes.md，以后再说
+C. 可视化 — 用 /specline-visualize 把结论做成 HTML 原型，供确认或交流
+D. 搁置 — 保存到 notes/<date>-explore-notes.md，以后再说
 或者，继续聊 — 不做任何推进。
 ```
 
@@ -487,7 +488,7 @@ C. 搁置 — 保存到 notes/<date>-explore-notes.md，以后再说
 
 ### 结束决策辅助
 
-探索自然暂停且有 ≥1 个可捕获结论（或明确的无结论共识）时，出示 A/B/C 三选项菜单。用户选择「继续聊」时不做任何推进。用户尚未在 change 上下文中时，A 选项引导先创建 change。
+探索自然暂停且有 ≥1 个可捕获结论（或明确的无结论共识）时，出示结束菜单。若用户需要先确认或交流想法，可提议退出探索后使用 `/specline-visualize`；原型制作由该 Skill 执行，不改变 Explore 的“不可实现”边界。用户选择「继续聊」时不做任何推进。用户尚未在 change 上下文中时，A 选项引导先创建 change。
 
 ---
 

@@ -62,6 +62,7 @@
 - **断点续跑**：随时中断，下次从最后一个可信门禁自动恢复（tasks.md 的 `[x]`/`[ ]` 标记进度）
 - **人机协作**：3 个人工检查点——Spec 确认、Review 可选复核、归档确认，支持 `full`/`minimal`/`none` 三级自动化策略配置
 - **AI 知识库**：自动检测、生成、更新六类项目知识文件（术语表/架构/约定/决策/参考/操作指南）
+- **前端设计纪律**：可见 UI Change 经 UI Design Brief → `frontend-design` Skill → 证据型 Code Review；纯逻辑前端任务不触发；不把主观审美做成确定性 Gate
 - **零外部依赖**：不依赖 OpenSpec CLI，全部功能自包含
 
 ## 快速开始
@@ -118,7 +119,7 @@ specline init --platform <list>
     ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  core/                        ← 平台无关的源文件             │
-│  ├── skills/                  ← 7 个 Skill（含模板变量）     │
+│  ├── skills/                  ← Skill 源（含模板变量；含 frontend-design） │
 │  ├── agents/                  ← Agent YAML Canonical        │
 │  ├── gates/                   ← 确定性门禁脚本              │
 │  ├── hooks/                   ← SessionStart hook 源       │
@@ -141,7 +142,8 @@ specline init --platform <list>
 │  项目目录                                                    │
 │  ├── .cursor/   (Cursor)                                    │
 │  ├── .claude/   (Claude Code)                               │
-│  ├── .agents/   (Codex)                                     │
+│  ├── .agents/skills  (Codex Skills，权威发现路径)             │
+│  ├── .codex/    (Codex Agents + hooks)                      │
 │  ├── .opencode/ (OpenCode)                                  │
 │  └── specline/  ← 运行时（跨平台共享）                       │
 │      ├── config.yaml                                        │
@@ -213,11 +215,13 @@ PHASE 2: CODING（编码）
   以 execution-contract.md 作为 primary implementation authority
   解析 tasks.md → 按依赖 DAG 分层 → 同批次前后端/config Agent 并发
   无依赖 + 可测试任务 → 自动启用 TDD 模式（RED-GREEN-REFACTOR）
+  visible-ui 任务 → 加载 frontend-design：Plan → 反模板 → Build → Verify → Refine
   每完成一个任务，[ ] 自动标记为 [x]
   → Gate: 编译检查 + 单元测试文件存在性检查
 
 PHASE 3: REVIEW（审查）
   specline-code-reviewer + specline-config-reviewer 分别审查代码和配置/文档
+  可见 UI 额外审查：设计系统兼容、Brief 一致性、响应式、焦点、reduced motion、文案与状态
   → Gate: Lint 检查 + code-review.json error 计数
 
 PHASE 4: TEST（测试）
@@ -250,10 +254,10 @@ PHASE 5: ARCHIVE（归档）
 |-------|------|
 | `specline-spec-creator` | 根据自然语言需求生成 proposal/design/tasks/spec |
 | `specline-spec-reviewer` | 审核规格的完整性、一致性和覆盖度 |
-| `specline-frontend-dev` | UI 组件、页面、样式、交互逻辑 |
+| `specline-frontend-dev` | UI 组件、页面、样式、交互；visible-ui 时执行 frontend-design 五阶段流程 |
 | `specline-backend-dev` | API 端点、数据模型、业务逻辑 |
 | `specline-config-dev` | Shell 脚本、配置文件、Markdown 文档 |
-| `specline-code-reviewer` | 代码质量、安全性、可维护性审查 |
+| `specline-code-reviewer` | 代码质量、安全性、可维护性；可见 UI 的证据型设计审查 |
 | `specline-config-reviewer` | 配置文件语法、Shell 脚本安全性审查 |
 | `specline-test-writer` | 黑盒测试编写（只看 Spec 不读源码） |
 | `specline-test-runner` | 执行测试并分类失败原因 |
@@ -265,11 +269,12 @@ PHASE 5: ARCHIVE（归档）
 |-------|------|------|
 | `specline-pipeline` | `/specline-pipeline <需求>` | 完整开发流水线编排 |
 | `specline-quickfix` | `/specline-quickfix <描述>` | 轻量修复（1-3 文件） |
-| `specline-propose` | 由 pipeline 调度 | 生成 Spec 规划文件 |
+| `specline-propose` | 由 pipeline 调度 | 生成 Spec 规划文件（含 UI Design Brief 合同） |
 | `specline-apply-change` | 由 pipeline 调度 | 执行 tasks.md 中的任务 |
 | `specline-explore` | `/specline-explore` | 探索模式，思考伙伴 |
 | `specline-archive-change` | 由 pipeline 调度 | 归档完成的 Change |
 | `specline-knowledge` | `/specline-knowledge` | AI 知识库管理 |
+| `frontend-design` | 由 frontend Agent 加载 | 可见 UI 设计纪律（跨平台内置，附 Apache-2.0 归属） |
 
 ## 确定性门禁
 
@@ -295,4 +300,6 @@ PHASE 5: ARCHIVE（归档）
 
 ## License
 
-MIT
+Specline 本体为 MIT。
+
+内置 `frontend-design` Skill 派生自 [Anthropic skills/frontend-design](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md)，按 Apache-2.0 随分发副本提供 `LICENSE` 与 `NOTICE.md`；该部分不得误标为 Specline MIT 原创。

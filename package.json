@@ -1,6 +1,6 @@
 {
   "name": "specline",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Spec-driven AI coding pipeline with deterministic quality gates for Cursor IDE",
   "bin": {
     "specline": "./cli.mjs"

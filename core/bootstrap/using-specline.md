@@ -1,17 +1,19 @@
 ---
 name: using-specline
 description: >-
-  Specline 入口。匹配到以下场景时必须 invoke 对应 skill：
-  大功能→pipeline，小改动→quickfix，探索→explore，知识库→knowledge。
+  Specline 入口与自然语言路由。根据用户当前状态选择对应 Skill：空项目 Web 初始化→specline-init-web，
+  大功能→pipeline，小改动→quickfix，探索→explore，原型可视化→visualize，知识库→knowledge。
 ---
 
 # Using Specline
 
 1. Gate 脚本 exit code 是硬决策，不可 override
-2. 大功能/跨模块 → specline-pipeline
-3. 1-3 文件小改 → specline-quickfix
-4. 思考探索 → specline-explore
-5. 读 specline/config.yaml 了解 human_gate_policy
+2. 可安全初始化的空项目 Web 骨架、SaaS SPA、Vite + Gin 初始化 → specline-init-web
+3. 大功能/跨模块 → specline-pipeline
+4. 1-3 文件小改 → specline-quickfix
+5. 思考探索 → specline-explore
+6. Explore 后确认/交流想法、原型图、HTML 原型、可视化、修改原型 → specline-visualize
+7. 读 specline/config.yaml 了解 human_gate_policy
 
 ## Skill 语言风格
 

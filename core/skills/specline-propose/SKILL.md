@@ -67,6 +67,29 @@ specline gate new --change "<name>"
 
 - **design.md**：包含 Architecture Overview、Key Design Decisions（每项说明选择理由和替代方案）、Data Flow、Component Interaction、**Architecture Impact Analysis**（侵入点/模块边界/依赖方向/数据影响/接口兼容性分析，每项标注置信度 ✅/⚠️）、**对外接口契约**（如有 specline-test-writer 负责的集成/E2E 测试；CLI 命令/HTTP 端点/模块导出签名）
 
+  **可见 UI 分类与 UI Design Brief 合同**：生成 design.md 前，将 Change 分类并写入 design.md：
+
+  - `visible-ui`：创建或视觉重塑页面、组件、布局、样式、视觉层级、动效或用户可见状态。
+  - `frontend-logic-only/non-ui`：仅数据获取、状态管理、类型、测试、后端/配置等，不改变可见 UI。不得虚构 Brief；写 `UI Design Brief: N/A` 并说明具体理由。
+  - 元数据不足时，根据需求、Spec、已有设计资料和预计 Files 保守判断，并显式记录 assumption/warning。
+
+  `visible-ui` 必须生成以下完整 12 类 Brief：
+
+  1. **Subject / Audience / Page Job**
+  2. **Change Mode**：`Greenfield/Redesign` 或 `Existing Product/Incremental Feature`
+  3. **Existing Constraints**：设计系统、品牌、组件库、现有视觉语言
+  4. **Visual Direction**：主题扎根的方向与明确避免的无语境套路
+  5. **Named Colors**：语义角色及已知名称/值
+  6. **Typography Roles**：display/body/label/data 及既有字体约束
+  7. **Layout Concept / Wireframe**：以真实信息编码结构，适用时 hero-as-thesis
+  8. **Signature Element**：最多一个有主题依据的主要大胆元素
+  9. **Motion**：目的、触发和 reduced/static 降级
+  10. **Real Content / Copy**：用户视角、主动语态、操作名称一致
+  11. **Loading / Empty / Error / Success / Disabled States**：逐项说明适用性
+  12. **Responsive / Keyboard / Focus / Reduced Motion / Accessibility**
+
+  固定优先级：**Spec 明确要求 > 项目已有设计系统/品牌规范 > UI Design Brief > 通用 frontend design discipline > Agent 自由发挥**。`Existing Product/Incremental Feature` 默认复用既有 tokens、组件、字体、颜色和交互语言，除非更高优先级来源授权，不新增孤立风格；`Greenfield/Redesign` 可基于主题定义新方向。规划阶段只记录当前浏览器/截图/可访问性验证能力及延后边界：能力可用且实现范围允许时必须规划执行，适用但明确不可用时规划为 `not_verified`，非 UI 为 `not_applicable`。不得创建 aesthetic score、主观审美评分或确定性视觉品味 Gate。
+
 - **tasks.md**：每个任务必须标注：
   - **Type**: frontend | backend | infra | db | config | docs
   - **Depends**: (none) | 依赖的任务编号

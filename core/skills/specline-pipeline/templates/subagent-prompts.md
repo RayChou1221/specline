@@ -21,7 +21,7 @@
 3. 用任务数据填充模板中的 `${变量}` 占位符（见各模板头部的变量列表）
 4. 将填充后的内容作为子 Agent 的 system prompt 传入
 
-**注意**：如果模板中使用了 `${变量}` 但任务数据中无对应字段，编排者应报 WARNING 事件日志并使用空字符串兜底。
+**注意**：如果模板中使用了 `${变量}` 但任务数据中无对应字段，编排者应报 WARNING 事件日志并使用空字符串兜底。对 frontend 任务，UI metadata 缺失时不能因空字符串而跳过判断：必须根据 Spec、Design、任务描述和 Files 保守分类，并在 prompt 与结果中记录 assumption/warning。backend/config/docs 模板不解释或依赖这些 UI 字段。
 
 ---
 
@@ -72,6 +72,9 @@
 | `${task.covers}` | `task.covers` | 覆盖的需求声明 |
 | `${task.files}` | `task.files` | 预期产出文件 |
 | `${task.content}` | `task.content` | 从 tasks.md 提取的任务完整描述 |
+| `${task.uiClassification}` | task metadata / Design | `visible-ui` 或 `logic-only`；仅 frontend 使用 |
+| `${task.uiBriefPath}` | task metadata / Design | UI Design Brief 路径；仅 frontend 使用 |
+| `${availableVerificationCapabilities}` | 编排者能力探测 | 可用 browser/screenshot/accessibility/static 能力及不可用原因；仅 frontend 使用 |
 
 ### Prompt 模板
 
@@ -111,6 +114,19 @@
 任务 ID: ${task.id}
 覆盖需求: ${task.covers}
 预期文件: ${task.files}
+
+## Frontend UI 派发上下文（仅当 `${task.type}` 为 `frontend` 时执行）
+- UI Classification: `${task.uiClassification}`
+- UI Brief: `${task.uiBriefPath}`
+- Available verification capabilities: `${availableVerificationCapabilities}`
+
+若以上 UI metadata 为空、不完整或矛盾，先依据 Spec、Design、任务描述和 Files 保守分类：只要可能创建或改变页面、组件、布局、样式、视觉层级、动效或用户可见状态，就按 `visible-ui` 处理；仅数据/状态/类型/测试且无可见变化时才按 `logic-only`。必须在产出报告记录 classification assumption/warning，不得静默跳过设计纪律。
+
+- `visible-ui`：读取适用 UI Brief；若 Brief 缺失，记录规范缺口，不自行覆盖更高优先级约束；强制执行 frontend-design 的 Plan → Anti-template Check → Build → Verify → Refine。
+- `logic-only`：跳过视觉设计纪律，继续原编码任务。
+- browser/screenshot 能力可用且任务范围允许时，必须执行适用验证并附证据。
+- 适用的 visible-UI 检查因明确能力不可用而无法执行时为 `not_verified`，写明原因。
+- 非 UI 检查为 `not_applicable` 或不进入矩阵；已执行的静态 lint/test/build 检查失败必须为 `failed`，不得降级为 `not_verified`。
 
 ## TDD 约束（RED-GREEN-REFACTOR）
 
@@ -179,6 +195,9 @@ ${task.content}
 | `${task.covers}` | `task.covers` | 覆盖的需求声明 |
 | `${task.files}` | `task.files` | 预期产出文件 |
 | `${task.content}` | `task.content` | 从 tasks.md 提取的任务完整描述 |
+| `${task.uiClassification}` | task metadata / Design | `visible-ui` 或 `logic-only`；仅 frontend 使用 |
+| `${task.uiBriefPath}` | task metadata / Design | UI Design Brief 路径；仅 frontend 使用 |
+| `${availableVerificationCapabilities}` | 编排者能力探测 | 可用 browser/screenshot/accessibility/static 能力及不可用原因；仅 frontend 使用 |
 
 ### Prompt 模板
 
@@ -218,6 +237,19 @@ ${task.content}
 任务 ID: ${task.id}
 覆盖需求: ${task.covers}
 预期文件: ${task.files}
+
+## Frontend UI 派发上下文（仅当 `${task.type}` 为 `frontend` 时执行）
+- UI Classification: `${task.uiClassification}`
+- UI Brief: `${task.uiBriefPath}`
+- Available verification capabilities: `${availableVerificationCapabilities}`
+
+若以上 UI metadata 为空、不完整或矛盾，先依据 Spec、Design、任务描述和 Files 保守分类：只要可能创建或改变页面、组件、布局、样式、视觉层级、动效或用户可见状态，就按 `visible-ui` 处理；仅数据/状态/类型/测试且无可见变化时才按 `logic-only`。必须在产出报告记录 classification assumption/warning，不得静默跳过设计纪律。
+
+- `visible-ui`：读取适用 UI Brief；若 Brief 缺失，记录规范缺口，不自行覆盖更高优先级约束；强制执行 frontend-design 的 Plan → Anti-template Check → Build → Verify → Refine。
+- `logic-only`：跳过视觉设计纪律，继续原编码任务。
+- browser/screenshot 能力可用且任务范围允许时，必须执行适用验证并附证据。
+- 适用的 visible-UI 检查因明确能力不可用而无法执行时为 `not_verified`，写明原因。
+- 非 UI 检查为 `not_applicable` 或不进入矩阵；已执行的静态 lint/test/build 检查失败必须为 `failed`，不得降级为 `not_verified`。
 
 ## 约束
 1. 只修改本任务 Files 范围内的文件
@@ -342,6 +374,7 @@ ${task.content}
 | `${role}` | 编排者计算 | 角色名（specline-frontend-dev 等） |
 | `${N}` | 编排者计算 | 本组任务数 |
 | `${tasks}` | 编排者填充 | 每个任务的结构化区块，按 order 顺序拼接 |
+| `${availableVerificationCapabilities}` | 编排者能力探测 | 本批次可用 browser/screenshot/accessibility/static 能力及不可用原因 |
 
 **编排者填充指引**：
 
@@ -350,6 +383,7 @@ ${task.content}
 - task.testable=true → 使用 Template 1 的「当前任务 + TDD 约束 + 关键约束 + 任务描述 + 产出报告」区块
 - task.testable=false（frontend/backend/infra/db）→ 使用 Template 2 的「当前任务 + 约束 + 任务描述 + 产出报告」区块
 - config/docs → 使用 Template 3 的「当前任务 + 约束 + 任务描述 + 产出报告」区块
+- 每个 frontend 任务区块还必须填入 `UI Classification`、`UI Brief` 路径和 `${availableVerificationCapabilities}`；metadata 缺失时按下述批量规则保守分类并记录 warning。backend/config/docs 区块保持原样，不要求 UI metadata。
 
 ### Prompt 模板
 
@@ -384,6 +418,14 @@ ${task.content}
 ---
 
 你负责执行同一类型（${role}）的 ${N} 个编码任务。请严格按顺序逐个处理，一个完成并写入产出报告后，再进行下一个。
+
+
+## Frontend 批量派发规则（仅作用于本批次中的 frontend task）
+Available verification capabilities: `${availableVerificationCapabilities}`
+
+每个 frontend 任务区块必须显式携带 `UI Classification`（`visible-ui`/`logic-only`）和 UI Brief 路径。若变量或 metadata 缺失、为空或矛盾，依据 Spec、Design、该任务描述和 Files 保守分类：可能影响页面、组件、布局、样式、视觉层级、动效或用户可见状态时按 `visible-ui`，并在该任务结果记录 assumption/warning。不得因为模板变量缺失而静默跳过。
+
+`visible-ui` 强制执行 frontend-design 的 Plan → Anti-template Check → Build → Verify → Refine；`logic-only` 跳过设计纪律。browser/screenshot 能力可用且范围允许时必须验证并附证据；适用但因明确能力不可用而不能执行的 visible-UI 检查为 `not_verified`；非 UI 为 `not_applicable`；执行过的静态 lint/test/build 失败为 `failed`。这些规则不得改变 backend/config/docs 任务的原有行为。
 
 以下是你需要顺序执行的 ${N} 个任务：
 

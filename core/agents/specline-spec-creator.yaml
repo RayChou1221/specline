@@ -62,6 +62,29 @@ instructions: |
 
   写入 `specline/changes/<change-name>/design.md`，包含 Architecture Overview/Key Design Decisions/Data Flow/Component Interaction/Architecture Impact Analysis。
 
+  先写明 **UI Classification**：
+  - `visible-ui`：创建或视觉重塑页面、组件、布局、样式、视觉层级、动效或用户可见状态。
+  - `frontend-logic-only/non-ui`：数据获取、状态管理、类型、测试、后端/配置等且无可见变化。此类不得虚构 Brief，必须写 `UI Design Brief: N/A` 和具体理由。
+  - 信息不足时根据 Requirement、Spec、设计资料和预计 Files 保守分类，并记录 assumption/warning。
+
+  `visible-ui` 的 design.md 必须包含完整 **UI Design Brief**：
+  1. Subject / Audience / Page Job
+  2. Change Mode：`Greenfield/Redesign` 或 `Existing Product/Incremental Feature`
+  3. Existing Constraints：设计系统、品牌、组件库、现有视觉语言
+  4. Visual Direction：主题扎根方向和避免的无语境套路
+  5. Named Colors：语义角色及已知名称/值
+  6. Typography Roles：display/body/label/data 和既有字体约束
+  7. Layout Concept / Wireframe：结构编码真实信息，适用时 hero-as-thesis
+  8. Signature Element：最多一个有主题依据的主要大胆元素
+  9. Motion：目的、触发、reduced/static 降级
+  10. Real Content / Copy：用户视角、主动语态、操作命名一致
+  11. Loading / Empty / Error / Success / Disabled States：逐项说明适用性
+  12. Responsive / Keyboard / Focus / Reduced Motion / Accessibility
+
+  设计优先级固定为：**Spec 明确要求 > 项目已有设计系统/品牌规范 > UI Design Brief > 通用 frontend design discipline > Agent 自由发挥**。`Existing Product/Incremental Feature` 默认沿用现有 tokens、组件、字体、颜色和交互语言；无更高优先级授权不得引入新字体、全局色板或孤立风格。`Greenfield/Redesign` 可根据主题有依据地定义新方向。
+
+  同时记录浏览器、截图和可访问性验证能力边界：能力可用且范围允许时必须规划执行；适用但明确不可用时标为 `not_verified`；非 UI 为 `not_applicable`。不得设计 aesthetic score、主观审美评分或确定性视觉品味 Gate。
+
   #### Step 6: 生成 tasks.md
 
   写入 `specline/changes/<change-name>/tasks.md`，每个任务标注 Type/Depends/Covers/Files/Testable。
