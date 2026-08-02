@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "platform": "cursor",
+  "serverName": "specline-diagram",
+  "config": {
+    "project": ".cursor/mcp.json",
+    "user": ".cursor/mcp.json",
+    "rootKey": "mcpServers"
+  },
+  "server": {
+    "command": "specline",
+    "args": [
+      "diagram",
+      "mcp",
+      "--stdio"
+    ],
+    "env": {
+      "SPECLINE_MANAGED": "diagram-adapter-v1"
+    }
+  },
+  "toolMappings": {
+    "diagram.create": "specline_diagram_create",
+    "diagram.load": "specline_diagram_load",
+    "diagram.edit": "specline_diagram_edit",
+    "diagram.readState": "specline_diagram_read_state",
+    "diagram.export": "specline_diagram_export",
+    "diagram.finish": "specline_diagram_finish"
+  },
+  "reloadOnChange": true
+}

@@ -83,6 +83,47 @@ metadata:
 └─────────────────────────────────────────┘
 ```
 
+### 可视化路由与 Diagram 交接
+
+Explore 默认继续使用 ASCII。只有关系复杂、需要在本地 GUI 中手工调整，或用户明确要求可持续编辑的 `.drawio` 文件时，才建议退出当前 Explore 动作并交给 `/specline-diagram`。
+
+| 表达目标 | 路由 |
+| --- | --- |
+| 简单关系、临时草图、当前对话即可看懂 | Explore 内直接使用 ASCII |
+| 页面 mockup、交互原型、可携带 HTML 演示 | 交给 `/specline-visualize` |
+| 复杂架构/流程/状态/依赖，且需要 GUI 手工编辑 | 经用户明确同意后交给 `/specline-diagram` |
+
+建议 Diagram 时，先说明：
+
+- 它会生成受管 `.drawio`、可选 SVG 和伴随 Markdown；
+- 需要本地受管 runtime，首次配置可能要求一次 Agent 重载；
+- 安装、配置或升级都必须先展示只读计划并取得许可；
+- 失败不会中断探索，会立即回退为 ASCII；
+- diagram 只是沟通 Artifact，不会自动回写 Spec。
+
+只有用户明确同意后，才按以下字段交接：
+
+```yaml
+purpose: 这张图要确认或交流什么
+audience: 谁会查看并据此做什么决定
+slug: lowercase-kebab-case
+change: 仅当用户明确关联既有 change 时提供
+confirmed: 用户或 Artifact 已明确的事实
+assumptions: 尚未确认的推断
+openQuestions: 尚待确认的问题
+```
+
+Explore 自身不启动或编排 MCP，不安装 runtime，不修改平台配置，不执行下载/checksum、端口、session、同步、导出或清理操作；这些全部由 Diagram Skill 和受管控制面负责。
+
+用户拒绝交接，或 Diagram 返回 `audit_blocked`、`mcp_missing`、断网/下载失败、checksum 失败、端口失败、runtime/UI 不健康、远端访问被阻止或同步失败时：
+
+1. 不重复施压，不放宽本地性、安全或许可边界；
+2. 保留已确认上下文，继续当前 Explore 对话；
+3. 用 ASCII 表达同一核心关系；
+4. 诚实说明 Diagram 未创建、未同步或未验证的部分。
+
+HTML prototype 始终交给 `/specline-visualize`。不得把 Diagram 当作 HTML prototype 的包装层，也不得改变 Visualize 的自包含单文件 HTML、内联 CSS/JS、无外部资源和无网络请求契约。
+
 **暴露风险和未知项**
 - 识别可能出错的地方
 - 找出理解缺口
@@ -455,7 +496,8 @@ specline gate list --json
 A. 转化 — 开始实现：/specline-pipeline <change-name>
 B. 同步 — 更新已有 change 的设计，写入 design.md
 C. 可视化 — 用 /specline-visualize 把结论做成 HTML 原型，供确认或交流
-D. 搁置 — 保存到 notes/<date>-explore-notes.md，以后再说
+D. 可编辑关系图 — 经同意后交给 /specline-diagram；失败回退 ASCII
+E. 搁置 — 保存到 notes/<date>-explore-notes.md，以后再说
 或者，继续聊 — 不做任何推进。
 ```
 
@@ -473,6 +515,9 @@ D. 搁置 — 保存到 notes/<date>-explore-notes.md，以后再说
 - **要可视化**：一张好图胜过许多段文字。
 - **要探索代码库**：让讨论扎根于现实。
 - **要质疑假设**：包括用户的假设，也包括你自己的假设。
+- **不要编排 Diagram runtime**：只建议、取得同意并交接；不安装、不配置、不启动 MCP。
+- **Diagram 失败后继续**：拒绝、MCP 缺失、断网、checksum、端口或 runtime/UI 失败时回退 ASCII，不中断探索。
+- **保持 Visualize 独立**：HTML prototype 仍交给 Visualize，不改变其自包含单文件 HTML 契约。
 
 ### 深度意识
 
@@ -488,7 +533,7 @@ D. 搁置 — 保存到 notes/<date>-explore-notes.md，以后再说
 
 ### 结束决策辅助
 
-探索自然暂停且有 ≥1 个可捕获结论（或明确的无结论共识）时，出示结束菜单。若用户需要先确认或交流想法，可提议退出探索后使用 `/specline-visualize`；原型制作由该 Skill 执行，不改变 Explore 的“不可实现”边界。用户选择「继续聊」时不做任何推进。用户尚未在 change 上下文中时，A 选项引导先创建 change。
+探索自然暂停且有 ≥1 个可捕获结论（或明确的无结论共识）时，出示结束菜单。若用户需要先确认或交流想法，可提议退出探索后使用 `/specline-visualize`；若复杂关系需要本地 GUI 手工编辑，可说明降级路径并在用户同意后交给 `/specline-diagram`。两种制作均由对应 Skill 执行，不改变 Explore 的“不可实现”边界。用户拒绝 Diagram 或 Diagram 失败时继续 Explore 并使用 ASCII。用户选择「继续聊」时不做任何推进。用户尚未在 change 上下文中时，A 选项引导先创建 change。
 
 ---
 

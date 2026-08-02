@@ -1159,9 +1159,9 @@ describe('specline sync — commands UPSTREAM_REMOVED 行为', () => {
    * Scenario: 旧项目 sync 检测到 commands 已删除
    * - WHEN 锁文件中有 commands 条目，但上游 templates 中 commands 目录不存在
    * - THEN sync 输出中对于每个 command 文件报告 UPSTREAM_REMOVED 警告
-   * - AND 不自动删除用户本地的 command 文件
+   * - AND 当前 Cursor scope 内未修改的 command 文件被删除，lock 条目被移除
    */
-  it('Scenario: 旧项目 sync 检测到 commands 已删除 — 输出 UPSTREAM_REMOVED 警告，不删除本地文件', () => {
+  it('Scenario: 旧项目 sync 检测到 commands 已删除 — scope 内删除文件并移除 lock 条目', () => {
     const { projectDir, lockPath, lockData } = initTestProject();
     if (!lockData) return;
 
@@ -1176,9 +1176,16 @@ describe('specline sync — commands UPSTREAM_REMOVED 行为', () => {
     let lockContent = readFileSync(lockPath, 'utf-8');
     lockContent = lockContent.replace(/version:\s*"[\d.]+"/, 'version: "0.0.1"');
 
-    // 在 files 块末尾追加 commands 条目
+    // 在磁盘上创建与 baseline 一致的 commands 文件（现有 removal 保护规则允许安全删除）
+    const commandsDir = join(projectDir, '.cursor', 'commands');
+    if (!existsSync(commandsDir)) {
+      mkdirSync(commandsDir, { recursive: true });
+    }
     for (const cmdPath of cmdPaths) {
-      lockContent += `  ${cmdPath}: sha256:1111111111111111111111111111111111111111111111111111111111111111\n`;
+      const cmdFile = join(projectDir, cmdPath);
+      const content = `# ${cmdPath.replace('.cursor/commands/', '').replace('.md', '')}\n`;
+      writeFileSync(cmdFile, content);
+      lockContent += `  ${cmdPath}: ${sha256(content)}\n`;
     }
     writeFileSync(lockPath, lockContent);
 
@@ -1187,16 +1194,6 @@ describe('specline sync — commands UPSTREAM_REMOVED 行为', () => {
     assert.ok(verifyData !== null, '修改后的锁文件应仍然可解析');
     for (const cmdPath of cmdPaths) {
       assert.ok(cmdPath in verifyData.files, `锁文件应包含 commands 条目: ${cmdPath}`);
-    }
-
-    // 在磁盘上创建 commands 文件（模拟用户本地已有 command 文件）
-    const commandsDir = join(projectDir, '.cursor', 'commands');
-    if (!existsSync(commandsDir)) {
-      mkdirSync(commandsDir, { recursive: true });
-    }
-    for (const cmdPath of cmdPaths) {
-      const cmdFile = join(projectDir, cmdPath);
-      writeFileSync(cmdFile, `# ${cmdPath.replace('.cursor/commands/', '').replace('.md', '')}\n`);
     }
 
     // 执行 sync
@@ -1215,18 +1212,16 @@ describe('specline sync — commands UPSTREAM_REMOVED 行为', () => {
     assert.ok(hasUpstreamRemoved,
       `应输出 UPSTREAM_REMOVED 或 "上游移除" 警告。\n实际输出: ${output.slice(0, 500)}`);
 
-    for (const cmdPath of cmdPaths) {
-      assert.ok(
-        output.includes(cmdPath),
-        `sync 输出应包含 commands 文件路径: ${cmdPath}\n实际输出: ${output.slice(0, 500)}`
-      );
-    }
-
-    // 验证：用户本地 command 文件不被自动删除
+    // 验证：当前 Cursor scope 内且未修改的 removed 文件被删除，lock 条目也被移除
+    const lockAfter = parseLockFile(lockPath);
+    assert.ok(lockAfter !== null, 'sync 后 lock 应可解析');
     for (const cmdPath of cmdPaths) {
       const cmdFile = join(projectDir, cmdPath);
-      assert.ok(existsSync(cmdFile),
-        `commands 文件不应被自动删除: ${cmdPath}`
+      assert.ok(!existsSync(cmdFile),
+        `当前 scope 内未修改的 commands 文件应被删除: ${cmdPath}`
+      );
+      assert.ok(!(cmdPath in lockAfter.files),
+        `当前 scope 内 removed commands 条目应从 lock 移除: ${cmdPath}`
       );
     }
   });

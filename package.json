@@ -1,6 +1,6 @@
 {
   "name": "specline",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Spec-driven AI coding pipeline with deterministic quality gates for Cursor IDE",
   "bin": {
     "specline": "./cli.mjs"
@@ -10,7 +10,9 @@
     "lib/",
     "core/",
     "adapters/",
-    "templates/"
+    "templates/",
+    "docs/diagram-runtime.md",
+    "docs/knowledge/howtos/local-drawio-diagrams.md"
   ],
   "keywords": [
     "cursor",
@@ -31,7 +33,9 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "test": "node --test tests/",
-    "test:update-sync": "node --test tests/cli-update-sync.test.mjs"
+    "test": "node --test",
+    "test:update-sync": "node --test tests/cli-update-sync.test.mjs",
+    "test:diagram": "node --test tests/unit/diagram/*.test.mjs tests/diagram-production.test.mjs",
+    "verify:diagram-production": "node --test tests/diagram-production.test.mjs"
   }
 }
