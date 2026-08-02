@@ -39,10 +39,10 @@
 | **HTML 原型可视化** | `/specline-visualize` | 将已收敛讨论制作成可持续修改的自包含单文件 HTML 原型 | ✅ 可用 |
 | **Web 项目初始化** | `/specline-init-web [目录]` | 在通过空目录安全检查后生成 React/Vue + Vite + TypeScript + Go/Gin 骨架 | ✅ 可用 |
 | **AI 项目知识库** | `/specline-knowledge` | 生成或更新术语、架构、约定、决策、参考和操作指南 | ✅ 可用 |
-| **本地可编辑关系图** | `/specline-diagram` | 用受管本地 Draw.io UI 创建和增量修改 `.drawio`，失败时回退 ASCII | ✅ 可用 |
+| **本地可编辑关系图** | `/specline-diagram` | 经上游 `@next-ai-drawio/mcp-server` 创建和增量修改 `.drawio`；缺 MCP 时引导首次 setup，失败时回退 ASCII | ✅ 可用 |
 | **多平台部署与同步** | `specline init` / `specline sync` | 将同一套 Skills、Agents、Hooks 部署到 Cursor、Claude Code、Codex、OpenCode | ✅ 可用 |
 
-> Diagram 是可选能力：Draw.io webapp 与 Next AI Draw.io MCP 以固定版本、checksum 和不可变依赖闭包安装到用户级目录 `~/.specline/runtimes/drawio/`，不进入 Specline 常驻 npm 依赖。所有 UI/MCP 仅绑定 `127.0.0.1`；安装、平台配置、卸载均需先看只读 plan 再批准 digest。简单关系继续用 Explore 的 ASCII，单文件 HTML 原型继续用 `/specline-visualize`，三者不合并。操作指南见 [本地 Draw.io Diagram](docs/knowledge/howtos/local-drawio-diagrams.md)。
+> Diagram 是可选便利入口：Specline 不维护受管 Draw.io runtime，也不提供 `specline diagram` CLI。日常直接调用上游 MCP；首次缺失时由薄 Skill 询问 MCP 落点（推荐用户级）、写入 `npx @next-ai-drawio/mcp-server@latest` 并引导重载一次。`init` / `sync` 不会静默写入各平台 MCP。简单关系继续用 Explore 的 ASCII，单文件 HTML 原型继续用 `/specline-visualize`，三者不合并。操作指南见 [本地 Draw.io Diagram](docs/knowledge/howtos/local-drawio-diagrams.md)。
 
 ### 完整流水线（新功能、重构）
 
@@ -78,9 +78,9 @@
 - **断点续跑**：随时中断，下次从最后一个可信门禁自动恢复（tasks.md 的 `[x]`/`[ ]` 标记进度）
 - **人机协作**：3 个人工检查点——Spec 确认、Review 可选复核、归档确认，支持 `full`/`minimal`/`none` 三级自动化策略配置
 - **AI 知识库**：自动检测、生成、更新六类项目知识文件（术语表/架构/约定/决策/参考/操作指南）
-- **本地可编辑图**：受管 Draw.io runtime、loopback-only session、路径隔离、显式许可计划；失败可恢复并回退 ASCII，无云端/远端 UI 回退
+- **本地可编辑图**：薄 `specline-diagram` Skill + 上游 Next AI Draw.io MCP；首次按需配置当前平台；失败可恢复并回退 ASCII
 - **前端设计纪律**：可见 UI Change 经 UI Design Brief → `frontend-design` Skill → 证据型 Code Review；纯逻辑前端任务不触发；不把主观审美做成确定性 Gate
-- **核心流水线自包含**：不依赖 OpenSpec CLI，也不引入运行时第三方 npm 依赖；可选 Diagram runtime 使用固定版本、checksum 和不可变依赖闭包独立管理
+- **核心流水线自包含**：不依赖 OpenSpec CLI，也不引入运行时第三方 npm 依赖；上游 drawio MCP 经 `npx` 按需使用，不进入常驻依赖
 
 ## 快速开始
 
@@ -157,13 +157,11 @@ specline init --platform <list>
 │  ├── agents/                  ← Agent YAML Canonical        │
 │  ├── gates/                   ← 确定性门禁脚本              │
 │  ├── hooks/                   ← SessionStart hook 源       │
-│  ├── runtimes/                ← 可选受管 runtime 清单与补丁 │
 │  └── bootstrap/               ← 通用 bootstrap 文档        │
 ├─────────────────────────────────────────────────────────────┤
 │  adapters/<platform>/         ← 平台特定配置                │
 │  ├── deploy.json              ← 部署描述（目录/格式/变量）   │
 │  ├── hooks.json               ← 平台 Hook 配置             │
-│  ├── diagram-mcp.*            ← Diagram MCP adapter（可选） │
 │  └── orchestration.md         ← 工具映射参考                │
 ├─────────────────────────────────────────────────────────────┤
 │  lib/                         ← CLI 模块                    │
@@ -171,8 +169,6 @@ specline init --platform <list>
 │  ├── deploy.mjs               ← 单平台部署逻辑             │
 │  ├── lock.mjs                 ← Lock file v2 读写          │
 │  ├── sync-options.mjs         ← sync scope 参数解析         │
-│  ├── diagram.mjs              ← Diagram CLI 控制面          │
-│  ├── diagram/                 ← runtime/session/path 安全层 │
 │  └── ...                                                    │
 └─────────────────────────────────────────────────────────────┘
     │
@@ -189,7 +185,7 @@ specline init --platform <list>
 │      ├── platforms.yaml                                     │
 │      ├── changes/                                           │
 │      ├── prototypes/                                        │
-│      ├── diagrams/            ← 受管 .drawio Artifact       │
+│      ├── diagrams/            ← 约定 .drawio Artifact 目录  │
 │      ├── templates/execution-contract.md                    │
 │      ├── bin/gate.sh                                        │
 │      └── bin/contract-check.mjs                             │
@@ -232,22 +228,13 @@ specline init --platform <list>
 /specline-knowledge
 ```
 
-需要可 GUI 编辑的复杂关系图时（先 plan，再批准 digest）：
+需要可 GUI 编辑的复杂关系图时：
 
 ```text
 /specline-diagram
 ```
 
-或用 CLI：
-
-```bash
-specline diagram plan --action install --json
-specline diagram install --approved-plan <digest> --json
-specline diagram plan --action configure --platform cursor --json
-specline diagram configure --platform cursor --approved-plan <digest> --json
-# 首次配置后重载 Agent 一次
-specline diagram start --project "$(pwd)" --slug my-flow --json
-```
+若当前会话尚无上游 drawio MCP，Skill 会询问配置落点（推荐用户级）、写入 `npx @next-ai-drawio/mcp-server@latest`，并请你重载 Agent 一次后再继续。不再提供 `specline diagram` CLI。
 
 ## 工作流选择
 
@@ -313,7 +300,6 @@ PHASE 5: ARCHIVE（归档）
 | `specline sync [--dry-run] [--platform <list>]` | 同步共享文件与指定 scope；不改变 configured platform 成员关系 |
 | `specline gate <subcommand>` | Gate 门禁 CLI 包装（spec/semantic/contract/build/lint/test/list） |
 | `specline hook session-start [--platform <p>]` | 跨平台 SessionStart hook |
-| `specline diagram <subcommand>` | 本地 Draw.io runtime/session（plan/install/configure/start/stop/doctor/uninstall） |
 | `specline platforms` | 查看已部署平台列表 |
 | `specline update` | 检查 CLI 新版本 |
 | `specline --version` | 显示版本号 |
@@ -345,7 +331,7 @@ PHASE 5: ARCHIVE（归档）
 | `specline-explore` | `/specline-explore` | 探索模式；按 ASCII / HTML 原型 / 可编辑 Diagram 路由表达方式 |
 | `specline-visualize` | `/specline-visualize` | 生成可持续迭代的自包含单文件 HTML 原型 |
 | `specline-init-web` | `/specline-init-web [目录]` | 安全生成 React/Vue + Vite + TypeScript + Go/Gin Web 骨架 |
-| `specline-diagram` | `/specline-diagram` | 本地可编辑 `.drawio`；显式许可、loopback-only、失败回退 ASCII |
+| `specline-diagram` | `/specline-diagram` | 上游 MCP 便利入口：可编辑 `.drawio`；缺 MCP 时首次 setup + 重载；失败回退 ASCII |
 | `specline-archive-change` | 由 pipeline 调度 | 归档完成的 Change |
 | `specline-knowledge` | `/specline-knowledge` | AI 知识库管理 |
 | `frontend-design` | 由 frontend Agent 加载 | 可见 UI 设计纪律（跨平台内置，附 Apache-2.0 归属） |
@@ -378,4 +364,4 @@ Specline 本体为 MIT。
 
 内置 `frontend-design` Skill 派生自 [Anthropic skills/frontend-design](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md)，按 Apache-2.0 随分发副本提供 `LICENSE` 与 `NOTICE.md`；该部分不得误标为 Specline MIT 原创。
 
-可选本地 Diagram runtime 锁定 draw.io webapp 31.1.2 与 `@next-ai-drawio/mcp-server` 0.2.3，二者均为 Apache-2.0；分发时必须保留 `core/runtimes/drawio/` 中的许可证、NOTICE、归属和修改说明。更完整的运维与许可说明见 [diagram-runtime.md](docs/diagram-runtime.md)。
+Diagram 经上游 `@next-ai-drawio/mcp-server`（Apache-2.0）按需通过 `npx` 使用，不随 Specline 常驻依赖分发。用法见 [diagram-runtime.md](docs/diagram-runtime.md) 与 [本地 Draw.io Diagram](docs/knowledge/howtos/local-drawio-diagrams.md)。

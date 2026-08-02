@@ -15,7 +15,6 @@ import { cliPlatforms } from './lib/platforms.mjs';
 import { runInit, resolvePlatforms } from './lib/init.mjs';
 import { planSyncWithEphemeralLock, runSync } from './lib/sync.mjs';
 import { decideLegacySyncMode, parseSyncPlatformList } from './lib/sync-options.mjs';
-import { cliDiagram } from './lib/diagram.mjs';
 
 const PKG = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8'));
 const VERSION = PKG.version;
@@ -405,7 +404,6 @@ function cmd_help(exitCode = 0) {
   specline gate <sub> [--change <n>] 运行 Gate 检查（spec/build/lint/list …）
   specline hook <sub> [--platform p] 运行 Hook 脚本（session-start …）
   specline platforms                 显示已部署平台列表
-  specline diagram <subcommand>       管理本地 Draw.io runtime 与 session
   specline --version, -v             显示版本号
   specline --help, -h                显示此帮助信息
 
@@ -473,11 +471,6 @@ switch (command) {
   }
   case 'hook': {
     const exitCode = cliHook(args);
-    process.exit(exitCode);
-    break;
-  }
-  case 'diagram': {
-    const exitCode = await cliDiagram(args);
     process.exit(exitCode);
     break;
   }

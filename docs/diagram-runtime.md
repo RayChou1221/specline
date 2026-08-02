@@ -1,169 +1,38 @@
-# Local Draw.io Runtime Operations
+# Diagram：上游 MCP 便利用法
 
-The local Draw.io runtime is an optional, user-level component for editable
-diagrams. It runs the locked draw.io webapp and Next AI Draw.io MCP server
-behind Specline-owned path, authentication, network, and lifecycle
-boundaries. It has no daemon and no remote fallback.
+Specline 不再提供受管 Draw.io runtime、`specline diagram` CLI，或 plan/install/doctor 仪式。
+画图引擎是上游 `@next-ai-drawio/mcp-server`；Specline 只提供薄 Skill 入口与首次 MCP 配置引导。
 
-> **Release gate:** upstream `auditState=verified_with_required_mitigations`
-> records provenance and mitigation feasibility; it remains separate from final
-> release verification. Task 10–12 remediations are complete, and the final
-> PKTAP DNS/HTTP/WebSocket no-non-loopback trace is bound to the canonical
-> `releaseInputDigest` with `releaseVerificationState=verified` and
-> `releaseGate=true`. Installation, configuration, session start, and MCP
-> exposure are permitted only while that bound evidence remains valid.
+## 日常路径
 
-## Installation plan and consent
+当当前 Agent 会话已能发现 drawio / 上游 MCP 工具时：
 
-Every install, upgrade, reinstall, platform configuration, uninstall, and
-multi-session stop begins with a read-only plan. Creating a plan performs no
-download, directory creation, process launch, or configuration write.
+1. 调用 `/specline-diagram`（或自然语言说明要画可 GUI 编辑的关系图）。
+2. 由 Skill 直接走上游工具流：`start_session` → `create_new_diagram` / `load_diagram` → `edit_diagram` → 浏览器预览 → 可选 `export_diagram`。
+3. 失败时继续原工作并用 ASCII，不启动任何 Specline 受管 install。
 
-The plan shows:
+## 首次路径（MCP 不可用）
 
-- action and a digest tied to the current plan inputs;
-- exact draw.io and MCP versions, official source URLs, SHA-256 values, and
-  immutable dependency-closure digest;
-- download and unpacked byte estimates;
-- the user-level target under
-  `~/.specline/runtimes/drawio/<runtime-version>/`;
-- affected current-platform configuration and sessions;
-- the `127.0.0.1` ephemeral-port policy, atomic publish, offline-only policy,
-  and absence of automatic upgrades;
-- whether one Agent reload is required; and
-- the exact uninstall scope and confirmation that diagrams are preserved.
+1. Skill 检测当前会话缺少上游 MCP。
+2. 说明将写入 `npx @next-ai-drawio/mcp-server@latest`。
+3. 询问配置落点：推荐用户级，可选项目级。
+4. 用户确认后仅写入**当前平台**；若存在旧受管 `specline-diagram` 条目则移除或替换。
+5. 引导重载 Agent **一次**（不承诺热重载），然后回到日常路径。
 
-An applying command accepts only the digest of the still-current approved
-plan. Any drift requires a new plan and new approval. Refusal or validation
-failure causes no planned mutation. Runtime versions never upgrade
-automatically.
+`specline init` / `specline sync` **不会**静默写入各平台 drawio MCP。
 
-After the canonical production-input retrace and write-back verification enable the gate, the approved flow is:
+## 产物与旧目录
 
-```sh
-specline diagram plan --action install --json
-specline diagram install --approved-plan <approved-digest> --json
-```
+- 推荐约定目录仍可用：`specline/diagrams/<slug>/`（`.drawio` 等）。图不是 Spec source of truth，不会自动回写 proposal/design/spec。
+- 若本机仍残留 `~/.specline/runtimes/drawio/`，可手动删除以释放磁盘；**不会**强制清理，也**不会**删除已有 diagram 产物。
 
-These examples describe the post-verification contract; while the manifest is
-pending/false for the final retrace, they are not authorization to operate.
+## 边界
 
-## Platform configuration and one reload
+| 目标 | 工具 |
+| --- | --- |
+| 简单瞬时关系 | Explore ASCII |
+| 单文件 HTML 原型 | `/specline-visualize` |
+| 可 GUI 编辑的 `.drawio` | `/specline-diagram` → 上游 MCP |
 
-Only the current platform is proposed by default. Cursor, Claude Code, Codex,
-and OpenCode are four independent permission targets. Detecting another
-platform does not authorize modifying it. Generate and approve a separate
-`configure` plan for every additional platform:
-
-```sh
-specline diagram plan --action configure --platform cursor --json
-specline diagram configure --platform cursor --approved-plan <approved-digest> --json
-```
-
-The first successful configuration for a platform sets
-`reloadState=reload_required`. Reload the Agent once. A later invocation that
-discovers the MCP clears that state to `reloaded`; if discovery still fails,
-the result is `mcp_missing` and the workflow falls back without silently
-reinstalling or modifying another platform. Dynamic hot reload is not
-promised.
-
-## Session operations
-
-After `releaseVerificationState=verified` and `releaseGate=true`, normal operations use:
-
-```sh
-specline diagram start --project <absolute-project-root> --slug <slug> --json
-specline diagram status --session <session-id> --json
-specline diagram stop --session <session-id> --mode save --json
-```
-
-`start` runs health and stale-state checks before creating an isolated session.
-Its UI URL must be exactly
-`http://127.0.0.1:<ephemeral>/sessions/<session-id>/`. Each session owns a
-separate process boundary, HTTP port, in-memory bearer token, revision, and
-diagram identity. The token is never placed in the URL, CLI JSON, files,
-artifacts, or logs.
-
-`status` is read-only and reports only sessions belonging to the current
-project. Stop modes are:
-
-- `save`: synchronize the browser revision, persist, then stop;
-- `discard`: stop without persisting this session's uncommitted revision;
-- `keep-30m`: hold the session for up to 30 minutes;
-- `continue`: leave the session active.
-
-An idle session reaches the 30-minute boundary and attempts synchronization
-before owned cleanup. Explicit stop, stdin EOF, `SIGTERM`, and parent-process
-exit also clean up the current session idempotently. A synchronization failure
-must be reported as not saved.
-
-Stopping all sessions requires a read-only plan listing the exact affected
-session IDs and separate approval:
-
-```sh
-specline diagram plan --action stop-all --session <id> --json
-specline diagram stop-all --approved-plan <approved-digest> --json
-```
-
-## Doctor and stale PIDs
-
-The non-mutating diagnostic is:
-
-```sh
-specline diagram doctor --json
-```
-
-After reviewing its result, stale managed metadata can be repaired with:
-
-```sh
-specline diagram doctor --repair-stale --json
-```
-
-Doctor verifies the audit/runtime version, manifest and closure digests,
-offline layout, platform/reload state, sessions, and stale installer
-directories. A PID is classified using its liveness, parent process, process
-start time, and session ownership. Repair may remove dead stale records and
-old managed staging directories; it must not signal an unknown, reused, or
-ownership-unverified PID.
-
-## Uninstall
-
-Uninstall is blocked while managed sessions are active. It requires a fresh
-read-only plan and its exact approved digest:
-
-```sh
-specline diagram plan --action uninstall --json
-specline diagram uninstall --approved-plan <approved-digest> --json
-```
-
-The approved operation removes only the versioned managed runtime and
-recorded `specline-diagram` configuration fragments. It preserves:
-
-- `specline/diagrams/**`;
-- `specline/changes/<change>/diagrams/**`;
-- companion Markdown, requested SVG exports, and prototypes; and
-- unrelated MCP servers and other platform configuration.
-
-Never manually delete a diagram directory as an uninstall procedure.
-
-## Failure and ASCII fallback
-
-Permission refusal, unavailable MCP, offline download failure, checksum or
-closure failure, unhealthy runtime, port failure, sync failure, or blocked
-release state is recoverable. The calling workflow continues its non-diagram
-work and uses an ASCII diagram when a visual explanation is still useful.
-
-The runtime must not be recovered by using Docker, a hosted draw.io/editor,
-remote assets, a remote MCP fallback, floating package versions, or a
-non-loopback bind. A remote dependency fails closed.
-
-## License and provenance
-
-The locked upstream works are draw.io webapp 31.1.2 and Next AI Draw.io MCP
-server 0.2.3 from their official sources. Both are Apache-2.0. Redistribution
-must include the Apache-2.0 license copies, retain applicable notices and
-attributions, preserve bundled-asset license files and restrictions, and
-prominently mark modifications. See
-`core/runtimes/drawio/NOTICE.md` for exact provenance, draw.io bundled-asset
-restrictions, the Task 11 modification boundary, and the applicable complete
-license copies `LICENSE.drawio` and `LICENSE.next-ai-drawio`.
+完整操作步骤见 [使用本地 Draw.io Diagram](knowledge/howtos/local-drawio-diagrams.md)。
+产品决策见 [Diagram 改为上游 MCP 便利入口](knowledge/decisions/2026-08-03-diagram-upstream-mcp-convenience.md)。

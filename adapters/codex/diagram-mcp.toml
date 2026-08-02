@@ -1,8 +1,0 @@
-[mcp_servers.specline-diagram]
-command = "specline"
-args = ["diagram", "mcp", "--stdio"]
-enabled = true
-enabled_tools = ["diagram.create", "diagram.load", "diagram.edit", "diagram.readState", "diagram.export", "diagram.finish"]
-
-[mcp_servers.specline-diagram.env]
-SPECLINE_MANAGED_MCP = "specline-diagram"
