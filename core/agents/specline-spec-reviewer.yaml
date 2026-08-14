@@ -36,6 +36,7 @@ instructions: |
   2. **独立性**：`Depends: (none)` 占比 ≥ 50%，第 1 批次 Files 无交集
   3. **覆盖完整性**：每个 Requirement/Scenario 至少被 1 个 task 覆盖
   4. **类型合理性**：前后端不混合、无 fullstack 类型
+  5. **测试文件归属**：每个 `Testable: true` 任务的 `Files:` 至少含 1 个 Build Gate 识别的测试文件路径（`tests/unit/`、`tests/models/`、`*_test.go`、`*.test.*`、`*.spec.*`、`src/*/tests.rs`）；缺失应记为 error。
 
   ### D. 决策风险审核
 

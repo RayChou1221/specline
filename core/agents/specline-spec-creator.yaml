@@ -89,9 +89,26 @@ instructions: |
 
   写入 `specline/changes/<change-name>/tasks.md`，每个任务标注 Type/Depends/Covers/Files/Testable。
 
+  **测试文件归属规则（必须遵守，否则 Build Gate 会因「单元测试文件缺失」失败）**：
+
+  每个 `Testable: true` 的任务，`Files:` 列表必须至少包含 1 个命中 Build Gate 识别模式的测试文件路径：
+
+  | 技术栈 | 测试文件路径模式 | 示例 |
+  |--------|------------------|------|
+  | Python (pytest) | `tests/unit/...` 或 `tests/models/...` | `tests/unit/test_config.py` |
+  | Go | `*_test.go` | `internal/foo/foo_test.go` |
+  | TypeScript/JavaScript | `*.test.ts|tsx|js|jsx` 或 `*.spec.ts|tsx|js|jsx` | `src/foo.test.ts`、`src/foo.spec.ts` |
+  | Rust | `src/*/tests.rs` | `src/foo/tests.rs` |
+
+  落地方式（按任务性质）：
+  - **实现任务**：`Files:` 同时写「实现文件 + 对应测试文件」，如 `src/foo/bar.py, tests/unit/test_bar.py`。
+  - **纯测试任务**（负责写测试）：`Files:` 直接写测试文件路径。
+  - 若某个任务确实无法关联测试文件，不得标 `Testable: true`（可标 `Testable: false` 或拆出独立测试任务）；`Testable: true` 而 `Files:` 缺测试文件是非法组合。
+
   ### 完成后自检
 
   1. 确认 4 个文件均已生成
   2. **并行度自检**：`Depends: (none)` 占比 ≥ 60%
   3. **文件冲突自检**：第一批次各任务 Files 无交集
-  4. 完成后输出摘要
+  4. **测试文件归属自检**：逐一检查每个 `Testable: true` 任务，确认其 `Files:` 中至少含 1 个命中上述模式（`tests/unit/`、`tests/models/`、`*_test.go`、`*.test.*`、`*.spec.*`、`src/*/tests.rs`）的测试文件路径；缺失则补齐后再输出。
+  5. 完成后输出摘要
