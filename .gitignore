@@ -28,6 +28,7 @@ tests/unit/*
 !tests/unit/upstream-drawio-mcp.test.mjs
 !tests/unit/deploy-no-diagram-runtime.test.mjs
 !tests/unit/cli-no-diagram.test.mjs
+!tests/unit/dsh-not-a-platform.test.mjs
 !tests/integration/
 tests/integration/*
 !tests/integration/cross-platform-sync.test.mjs

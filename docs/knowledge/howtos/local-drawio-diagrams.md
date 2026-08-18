@@ -69,6 +69,8 @@ npx @next-ai-drawio/mcp-server@latest
 
 Claude Code / Codex / OpenCode 的配置文件路径与键名按各平台约定；首次在该平台调用 diagram 时各自走一遍 setup。`specline init` / `specline sync` **不会**静默写入任何平台的 drawio MCP。
 
+DSH 上 `/specline-diagram` 缺工具时，落点是**当前 profile** 的 `cordis.patch.yml`（`id: mcp-drawio` + `@deepseek-ai/dsh-mcp-client` + `npx -y @next-ai-drawio/mcp-server@latest`），不是项目级 MCP，也不写入插件自己的 bundle patch。`dsh-specline` 默认不启用 drawio。详见 [dsh-plugin howto](dsh-plugin.md)。
+
 ### 拒绝写入时
 
 若不希望修改 MCP 配置，直接拒绝即可。配置文件不会被改动；可改用 ASCII，或稍后再做 setup。

@@ -1,0 +1,51 @@
+{
+  "name": "dsh-specline",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Specline Cordis bundle plugin for DeepSeek Harness",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/",
+    "cordis.patch.yml",
+    "assets/"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc && node lib/build-assets.js",
+    "test": "tsc && node --test \"tests/**/*.test.js\"",
+    "prepublishOnly": "tsc && node lib/build-assets.js"
+  },
+  "peerDependencies": {
+    "cordis": ">=0.0.0-0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "specline",
+    "dsh",
+    "cordis",
+    "deepseek-harness"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RayChou1221/specline",
+    "directory": "dsh"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

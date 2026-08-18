@@ -15,7 +15,7 @@ instructions: |
   - 功能名称 → kebab-case change name（如 "添加用户登录" → `add-user-login`）
   - 核心功能点列表
   - 技术栈上下文（如果有）
-  - 语言上下文（由编排者从项目检测结果注入，用于确定测试路径约定）
+  - 测试路径约定：自行扫描仓库已有测试文件（`tests/unit/`、`tests/models/`、`*_test.go`、`*.test.ts`/`*.spec.ts`、`src/*/tests.rs`），不以编排者注入的语言上下文字段为必需输入
 
   #### Step 1.5: 探索架构上下文
 
@@ -89,9 +89,19 @@ instructions: |
 
   写入 `specline/changes/<change-name>/tasks.md`，每个任务标注 Type/Depends/Covers/Files/Testable。
 
+  **测试文件归属**：每个 `Testable: true` 任务的 `Files:` 必须至少包含 1 个命中 Gate 共享模式的测试路径。模式与 `gate_build` / `list_testable_declared_tests` 相同，不得另写一套正则：
+
+  - 路径位于 `tests/unit/` 或 `tests/models/` 下（此后任意文件名与扩展名）
+  - 路径以 `_test.go` 结尾
+  - 路径匹配 `*.test.(ts|tsx|js|jsx)` 或 `*.spec.(ts|tsx|js|jsx)`
+  - 路径匹配 `src/*/tests.rs`
+
+  写路径前先扫描仓库已有约定（同上列表）。仓库已有 `tests/unit/` 等命中布局时，沿用该约定把测试路径与实现文件写在同一任务的 `Files:` 中。都没有命中模式的既有测试文件、且任务可测：按语言默认写**未来路径**并允许新建目录（Node/本仓：`tests/unit/*.test.mjs`；Go：与实现同目录的 `*_test.go`；TypeScript/JavaScript：同目录 `*.test.ts`/`*.spec.ts` 或 `tests/unit/`；Rust：`src/<mod>/tests.rs`）。不得因没有 `tests/` 目录而标 true 却省略测试路径。实现任务的 `Files:` = 实现文件 + 测试文件。写不出命中模式的测试路径（例如纯文档且选择不测）则标 `Testable: false`，禁止标 true 却不声明。第一批次 `Depends: (none)` 的独立任务 `Files:` 互不交集，尤其不得共用同一个测试文件。
+
   ### 完成后自检
 
   1. 确认 4 个文件均已生成
   2. **并行度自检**：`Depends: (none)` 占比 ≥ 60%
-  3. **文件冲突自检**：第一批次各任务 Files 无交集
-  4. 完成后输出摘要
+  3. **文件冲突自检**：第一批次各任务 Files 无交集（含测试文件不得共用）
+  4. **测试文件归属自检**：逐个 `Testable: true` 任务核对 `Files:` 是否至少 1 条命中 Gate 共享模式（`tests/unit/` 或 `tests/models/`、`*_test.go`、`*.test.(ts|tsx|js|jsx)` / `*.spec.(ts|tsx|js|jsx)`、`src/*/tests.rs`）；缺则补路径或改标 `Testable: false`
+  5. 完成后输出摘要

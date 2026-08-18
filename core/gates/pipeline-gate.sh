@@ -40,7 +40,11 @@ while [ $# -gt 0 ]; do
 done
 # ===== 项目根目录 =====
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [ -n "${SPECLINE_PROJECT_ROOT:-}" ]; then
+  PROJECT_ROOT="$(cd "$SPECLINE_PROJECT_ROOT" && pwd)"
+else
+  PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 
 # ===== 状态文件 =====
 if [ -n "$CHANGE" ]; then
@@ -72,6 +76,56 @@ fail() {
 
 pass() {
   echo "✅ $1"
+}
+
+# 列出 Testable: true 任务声明的测试路径（路径模式的唯一真相）。
+# 输入: tasks.md 路径
+# 输出: 每个命中路径一行 task_id|rel_path；未命中则 task_id|（空路径）
+# 字段顺序不敏感：先收集块内 Testable / Files，在下一 ## 或 END 再输出。
+list_testable_declared_tests() {
+  local tasks_file="$1"
+  if [ ! -f "$tasks_file" ]; then
+    return 0
+  fi
+  awk '
+    function flush() {
+      if (in_task && testable == "true") {
+        split(files_line, paths, /,[ \t]*/)
+        has_test = 0
+        for (i in paths) {
+          gsub(/^[ \t]+|[ \t]+$/, "", paths[i])
+          if (paths[i] ~ /^tests\/(unit|models)\// ||
+              paths[i] ~ /_test\.go$/ ||
+              paths[i] ~ /\.test\.(ts|tsx|js|jsx)$/ ||
+              paths[i] ~ /\.spec\.(ts|tsx|js|jsx)$/ ||
+              paths[i] ~ /^src\/.*\/tests\.rs$/) {
+            print task_id "|" paths[i]
+            has_test = 1
+          }
+        }
+        if (has_test == 0) {
+          print task_id "|"
+        }
+      }
+      in_task = 0
+      testable = ""
+      files_line = ""
+      task_id = ""
+    }
+    /^## / {
+      flush()
+      task_id = $2; gsub(/\..*/, "", task_id)
+      in_task = 1
+      testable = ""
+      files_line = ""
+    }
+    /\*\*Testable\*\*:.*true/ { testable = "true" }
+    /\*\*Files\*\*:/ {
+      files_line = $0
+      gsub(/.*\*\*Files\*\*:[ \t]*/, "", files_line)
+    }
+    END { flush() }
+  ' "$tasks_file"
 }
 
 # ===== 获取 Spec 文件路径 =====
@@ -786,6 +840,21 @@ gate_spec() {
     pass "Testable 标注完整性检查通过 ($testable_count/$task_count)"
   fi
 
+  # 10b. Testable=true 必须在 Files 中声明命中模式的测试路径（不检查文件是否已存在）
+  local declared_missing=""
+  while IFS='|' read -r task_id file_path; do
+    [ -z "$task_id" ] && continue
+    if [ -z "$file_path" ]; then
+      declared_missing="${declared_missing}
+  任务 $task_id: 未在 Files 中声明测试文件"
+    fi
+  done < <(list_testable_declared_tests "$tasks_file")
+
+  if [ -n "$declared_missing" ]; then
+    fail "未在 Files 中声明测试文件:${declared_missing}"
+  fi
+  pass "Testable 测试路径声明检查通过"
+
   # 11. 至少 1 个任务无依赖
   local independent_count
   independent_count=$(grep -c '\*\*Depends\*\*: (none)' "$tasks_file" || echo "0")
@@ -843,7 +912,7 @@ gate_build() {
   local tasks_file="$PROJECT_ROOT/specline/changes/$CHANGE/tasks.md"
   if [ -f "$tasks_file" ]; then
     local testable_true_count
-    testable_true_count=$(grep -c '\*\*Testable\*\*:.*true' "$tasks_file" || echo "0")
+    testable_true_count=$(grep -c '\*\*Testable\*\*:.*true' "$tasks_file" || true)
 
     if [ "$testable_true_count" -gt 0 ]; then
       echo "正在检查 $testable_true_count 个 Testable=true 任务的单元测试文件..."
@@ -878,35 +947,7 @@ gate_build() {
             fi
             ;;
         esac
-      done < <(awk '
-        /^## / {
-          task_id = $2; gsub(/\..*/, "", task_id)
-          testable = ""; files_line = ""
-        }
-        /\*\*Testable\*\*:.*true/ { testable = "true" }
-        /\*\*Files\*\*:/ {
-          if (testable == "true") {
-            files_line = $0
-            gsub(/.*\*\*Files\*\*:[ \t]*/, "", files_line)
-            split(files_line, paths, /,[ \t]*/)
-            has_test = 0
-            for (i in paths) {
-              gsub(/^[ \t]+|[ \t]+$/, "", paths[i])
-              if (paths[i] ~ /^tests\/(unit|models)\// ||
-                  paths[i] ~ /_test\.go$/ ||
-                  paths[i] ~ /\.test\.(ts|tsx|js|jsx)$/ ||
-                  paths[i] ~ /\.spec\.(ts|tsx|js|jsx)$/ ||
-                  paths[i] ~ /^src\/.*\/tests\.rs$/) {
-                print task_id "|" paths[i]
-                has_test = 1
-              }
-            }
-            if (has_test == 0) {
-              print task_id "|"
-            }
-          }
-        }
-      ' "$tasks_file")
+      done < <(list_testable_declared_tests "$tasks_file")
 
       if [ -n "$missing_files" ]; then
         fail "单元测试文件缺失:${missing_files}"

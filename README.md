@@ -22,27 +22,37 @@
 
 ## 支持平台
 
-| 平台 | 状态 | 说明 |
-| ------ | ------ | ------ |
-| **Cursor** | ✅ 完整支持 | Skills + Agents + Hooks 原生集成 |
-| **Claude Code** | ✅ 完整支持 | Skills + Agents + settings.json hooks |
-| **Codex** | ✅ 完整支持 | Skills + TOML Agents + hooks.json |
-| **OpenCode** | ✅ 完整支持 | Skills + Plugin + prompt 内嵌 agents |
+
+| 平台              | 状态           | 说明                                                                                                   |
+| --------------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| **Cursor**      | ✅ 完整支持       | Skills + Agents + Hooks 原生集成                                                                         |
+| **Claude Code** | ✅ 完整支持       | Skills + Agents + settings.json hooks                                                                |
+| **Codex**       | ✅ 完整支持       | Skills + TOML Agents + hooks.json                                                                    |
+| **OpenCode**    | ✅ 完整支持       | Skills + Plugin + prompt 内嵌 agents                                                                   |
+| **DSH**         | 🧪 预览（运行时插件） | 独立包 `dsh-specline`；斜杠武装当前会话。**不是**第五个 deploy 平台，不写 `.dsh/skills`，也不是 `specline init --platform` 的合法值 |
+
+
+
 
 ## 功能一览
 
-| 功能 | 入口 | 适用场景 | 状态 |
-| ------ | ------ | ---------- | ------ |
-| **完整开发流水线** | `/specline-pipeline <需求>` | 新功能、重构、跨模块改动；覆盖 Spec、执行合同、编码、审查、测试和归档 | ✅ 可用 |
-| **轻量修复** | `/specline-quickfix <描述>` | 1–3 个文件的 bug、配置或文档修改 | ✅ 可用 |
-| **需求探索** | `/specline-explore` | 编码前澄清需求、调查代码、比较方案和暴露风险 | ✅ 可用 |
-| **HTML 原型可视化** | `/specline-visualize` | 将已收敛讨论制作成可持续修改的自包含单文件 HTML 原型 | ✅ 可用 |
-| **Web 项目初始化** | `/specline-init-web [目录]` | 在通过空目录安全检查后生成 React/Vue + Vite + TypeScript + Go/Gin 骨架 | ✅ 可用 |
-| **AI 项目知识库** | `/specline-knowledge` | 生成或更新术语、架构、约定、决策、参考和操作指南 | ✅ 可用 |
-| **本地可编辑关系图** | `/specline-diagram` | 经上游 `@next-ai-drawio/mcp-server` 创建和增量修改 `.drawio`；缺 MCP 时引导首次 setup，失败时回退 ASCII | ✅ 可用 |
-| **多平台部署与同步** | `specline init` / `specline sync` | 将同一套 Skills、Agents、Hooks 部署到 Cursor、Claude Code、Codex、OpenCode | ✅ 可用 |
+
+| 功能             | 入口                                            | 适用场景                                                                             | 状态    |
+| -------------- | --------------------------------------------- | -------------------------------------------------------------------------------- | ----- |
+| **完整开发流水线**    | `/specline-pipeline <需求>`                     | 新功能、重构、跨模块改动；覆盖 Spec、执行合同、编码、审查、测试和归档                                            | ✅ 可用  |
+| **轻量修复**       | `/specline-quickfix <描述>`                     | 1–3 个文件的 bug、配置或文档修改                                                             | ✅ 可用  |
+| **需求探索**       | `/specline-explore`                           | 编码前澄清需求、调查代码、比较方案和暴露风险                                                           | ✅ 可用  |
+| **HTML 原型可视化** | `/specline-visualize`                         | 将已收敛讨论制作成可持续修改的自包含单文件 HTML 原型                                                    | ✅ 可用  |
+| **Web 项目初始化**  | `/specline-init-web [目录]`                     | 在通过空目录安全检查后生成 React/Vue + Vite + TypeScript + Go/Gin 骨架                          | ✅ 可用  |
+| **AI 项目知识库**   | `/specline-knowledge`                         | 生成或更新术语、架构、约定、决策、参考和操作指南                                                         | ✅ 可用  |
+| **本地可编辑关系图**   | `/specline-diagramnone`                      | 经上游 `@next-ai-drawio/mcp-server` 创建和增量修改 `.drawio`；缺 MCP 时引导首次 setup，失败时回退 ASCII | ✅ 可用  |
+| **多平台部署与同步**   | `specline init` / `specline sync`             | 将同一套 Skills、Agents、Hooks 部署到 Cursor、Claude Code、Codex、OpenCode                   | ✅ 可用  |
+| **DSH 运行时插件**  | `dsh plugin add dsh-specline` + `/specline-`* | 在 DeepSeek Harness 里用斜杠跑同一套流水线；只武装当前会话，不部署 `.dsh/skills`                         | 🧪 预览 |
+
 
 > Diagram 是可选便利入口：Specline 不维护受管 Draw.io runtime，也不提供 `specline diagram` CLI。日常直接调用上游 MCP；首次缺失时由薄 Skill 询问 MCP 落点（推荐用户级）、写入 `npx @next-ai-drawio/mcp-server@latest` 并引导重载一次。`init` / `sync` 不会静默写入各平台 MCP。简单关系继续用 Explore 的 ASCII，单文件 HTML 原型继续用 `/specline-visualize`，三者不合并。操作指南见 [本地 Draw.io Diagram](docs/knowledge/howtos/local-drawio-diagrams.md)。
+
+
 
 ### 完整流水线（新功能、重构）
 
@@ -53,6 +63,8 @@
           creator  reviewer  contract    config config  集成/
                            hash 绑定      并行  reviewer  E2E
 ```
+
+
 
 ### 轻量修复（修 bug、改配置、文档微调）
 
@@ -66,7 +78,7 @@
 ## 核心特性
 
 - **需求驱动**：自然语言 → 结构化规格文档（Requirements + Scenarios + WHEN/THEN）
-- **跨平台**：同一套 Spec 驱动流水线，适配 Cursor / Claude Code / Codex / OpenCode
+- **跨平台**：同一套 Spec 驱动流水线。文件部署适配 Cursor / Claude Code / Codex / OpenCode；DeepSeek Harness 经独立包 `dsh-specline` 接入（预览，不是第五个 deploy 平台）
 - **安全初始化**：`specline-init-web` 通过两次只读扫描和 create-exclusive 写入，为空项目生成 React/Vue + Go/Gin 全栈骨架
 - **探索与原型**：`specline-explore` 负责澄清和收敛，`specline-visualize` 输出无 CDN、无外部请求的自包含单文件 HTML 原型；复杂可编辑关系图经同意后交接 `specline-diagram`
 - **可控同步**：区分 configured platforms 与单次 target scope；scoped sync 不改写省略平台的文件、lock 条目或 baseline hash
@@ -80,9 +92,13 @@
 - **AI 知识库**：自动检测、生成、更新六类项目知识文件（术语表/架构/约定/决策/参考/操作指南）
 - **本地可编辑图**：薄 `specline-diagram` Skill + 上游 Next AI Draw.io MCP；首次按需配置当前平台；失败可恢复并回退 ASCII
 - **前端设计纪律**：可见 UI Change 经 UI Design Brief → `frontend-design` Skill → 证据型 Code Review；纯逻辑前端任务不触发；不把主观审美做成确定性 Gate
-- **核心流水线自包含**：不依赖 OpenSpec CLI，也不引入运行时第三方 npm 依赖；上游 drawio MCP 经 `npx` 按需使用，不进入常驻依赖
+- **核心流水线自包含**：不依赖 OpenSpec CLI；主仓 CLI 不引入运行时第三方 npm 依赖（Cordis 只在 `dsh/` 插件包）；上游 drawio MCP 经 `npx` 按需使用，不进入常驻依赖
+
+
 
 ## 快速开始
+
+### Cursor / Claude Code / Codex / OpenCode
 
 ```bash
 # 全局安装
@@ -104,7 +120,9 @@ specline init --with-shell-guard
 npx specline init --platform cursor
 ```
 
-### `--platform` 参数
+初始化后在对应平台输入 `/specline-pipeline "添加 JWT 用户认证"`。
+
+#### `--platform` 参数
 
 | 值 | 说明 |
 | ---- | ------ |
@@ -112,9 +130,59 @@ npx specline init --platform cursor
 | `claude` | 部署 Claude Code 集成 |
 | `codex` | 部署 Codex 集成 |
 | `opencode` | 部署 OpenCode 集成 |
-| `all` | 部署全部平台 |
+| `all` | 部署全部上述四平台 |
+| `none` | 不部署任何 IDE 平台文件，只创建 `specline/` 运行时（DSH 或纯 CLI） |
 
-TTY 环境下不指定 `--platform` 时进入交互式多选界面；非 TTY 环境默认 `cursor`。
+TTY 环境下不指定 `--platform` 时进入交互式多选界面；非 TTY 环境默认 `cursor`。`dsh` **不是**合法平台名；`specline init --platform dsh` 会按未知平台报错。
+
+### DeepSeek Harness（DSH）
+
+DSH 走独立插件 `dsh-specline`，**不是** `specline init --platform` 的第五个值。打开 DSH 仍是普通助手；只有你主动敲斜杠才武装**当前这一次会话**。
+
+1. **安装 Specline CLI**（插件不自带 CLI，Gate / init 需要它）
+
+```bash
+npm install -g specline
+```
+
+2. **给要用的 DSH profile 加插件**，然后重启 `dsh web`
+
+```bash
+dsh plugin add dsh-specline
+dsh plugin --profile web add dsh-specline
+dsh plugin --profile headless add dsh-specline
+```
+
+npm 尚未发布时，在本仓构建后用路径安装：
+
+```bash
+cd /path/to/specline/dsh
+npm install
+npm run build
+dsh plugin --profile web add /path/to/specline/dsh
+```
+
+3. **在业务仓库初始化 Specline 运行时**（需要 `specline/config.yaml`）
+
+```bash
+cd my-project
+specline init --platform none          # 只用 DSH
+# specline init --platform cursor      # 同时用 Cursor 等 IDE 时用已有列表，不要写 dsh
+```
+
+未 init 时：Web 会报错并询问是否现在执行上面的 init；Headless 只报错、不代跑。
+
+4. **在 DSH 对话里敲斜杠**
+
+```text
+/specline-pipeline 做 JWT 登录
+```
+
+同一套斜杠：`/specline-quickfix`、`/specline-explore`、`/specline-knowledge`、`/specline-propose`、`/specline-apply-change`、`/specline-archive-change`、`/specline-visualize`、`/specline-diagram`、`/specline-init-web`。
+
+卡点策略在仓库的 `specline/config.yaml`（`pipeline.human_gate_policy`），不在 `~/.dsh`。改完不必重启 DSH。
+
+**不要**执行 `dsh plugin add github:RayChou1221/specline`：根仓没有 `dsh.bundle`，不会激活插件。更细的安装、卸载、profile 见 [dsh/README.md](dsh/README.md) 与 [DSH 插件操作指南](docs/knowledge/howtos/dsh-plugin.md)。
 
 ## Upgrading
 
@@ -170,9 +238,12 @@ specline init --platform <list>
 │  ├── lock.mjs                 ← Lock file v2 读写          │
 │  ├── sync-options.mjs         ← sync scope 参数解析         │
 │  └── ...                                                    │
+├─────────────────────────────────────────────────────────────┤
+│  dsh/                         ← 独立包 dsh-specline（不进根 files） │
+│  └── Cordis bundle            ← DSH 斜杠武装当前会话；不写 .dsh/skills │
 └─────────────────────────────────────────────────────────────┘
     │
-    ▼ 渲染 + 部署
+    ▼ 渲染 + 部署（仅四平台；DSH 不走这条路径）
 ┌─────────────────────────────────────────────────────────────┐
 │  项目目录                                                    │
 │  ├── .cursor/   (Cursor)                                    │
@@ -234,22 +305,24 @@ specline init --platform <list>
 /specline-diagram
 ```
 
-若当前会话尚无上游 drawio MCP，Skill 会询问配置落点（推荐用户级）、写入 `npx @next-ai-drawio/mcp-server@latest`，并请你重载 Agent 一次后再继续。不再提供 `specline diagram` CLI。
+若当前会话尚无上游 drawio MCP，Skill 会询问配置落点（推荐用户级）、写入 `npx @next-ai-drawio/mcp-server@latest`，并请你重载 Agent 一次后再继续。不再提供 `specline diagram` CLI。在 DSH 上，缺工具时写入的是**当前 profile** 的 `cordis.patch.yml`，不是项目级 MCP；`dsh-specline` 默认不启用 drawio。
 
 ## 工作流选择
 
 Specline 提供两种工作流，按变更规模选择：
 
-| 维度 | Quickfix (`/specline-quickfix`) | Pipeline (`/specline-pipeline`) |
-| ------ | ------------------------------- | ------------------------------- |
-| 文件改动数 | 1-3 个 | 4+ 个 |
-| 关注点 | 单一关注点 | 多关注点/跨模块 |
-| 架构变更 | 无新架构/新组件 | 需要新组件/新 API |
-| 测试 | 不需要新测试 | 需要写新测试 |
-| 典型场景 | 修 bug、改配置、文档微调 | 新增功能、重构 |
-| 产出 | summary.md + files-changed.json | proposal/design/tasks/specs + execution-contract.md + 全部测试 |
-| 人工确认 | 0 个 | 3 个 |
-| 耗时 | 1-3 分钟 | 10-30 分钟 |
+
+| 维度    | Quickfix (`/specline-quickfix`) | Pipeline (`/specline-pipeline`)                            |
+| ----- | ------------------------------- | ---------------------------------------------------------- |
+| 文件改动数 | 1-3 个                           | 4+ 个                                                       |
+| 关注点   | 单一关注点                           | 多关注点/跨模块                                                   |
+| 架构变更  | 无新架构/新组件                        | 需要新组件/新 API                                                |
+| 测试    | 不需要新测试                          | 需要写新测试                                                     |
+| 典型场景  | 修 bug、改配置、文档微调                  | 新增功能、重构                                                    |
+| 产出    | summary.md + files-changed.json | proposal/design/tasks/specs + execution-contract.md + 全部测试 |
+| 人工确认  | 0 个                             | 3 个                                                        |
+| 耗时    | 1-3 分钟                          | 10-30 分钟                                                   |
+
 
 **使用建议**：如果不确定，优先用 quickfix。如果需要更严格的流程保证，用 pipeline。
 
@@ -292,62 +365,80 @@ PHASE 5: ARCHIVE（归档）
   ✅ 完成
 ```
 
+
+
 ## CLI 命令
 
-| 命令 | 说明 |
-| ------ | ------ |
-| `specline init [--platform <list>] [--with-shell-guard]` | 初始化 Specline 项目，支持多平台部署和可选 shell 安全 Hook |
-| `specline sync [--dry-run] [--platform <list>]` | 同步共享文件与指定 scope；不改变 configured platform 成员关系 |
-| `specline gate <subcommand>` | Gate 门禁 CLI 包装（spec/semantic/contract/build/lint/test/list） |
-| `specline hook session-start [--platform <p>]` | 跨平台 SessionStart hook |
-| `specline platforms` | 查看已部署平台列表 |
-| `specline update` | 检查 CLI 新版本 |
-| `specline --version` | 显示版本号 |
-| `specline --help` | 显示帮助信息 |
+
+| 命令                                                       | 说明                                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------- |
+| `specline init [--platform <list>] [--with-shell-guard]` | 初始化 Specline 项目，支持多平台部署和可选 shell 安全 Hook                    |
+| `specline sync [--dry-run] [--platform <list>]`          | 同步共享文件与指定 scope；不改变 configured platform 成员关系                |
+| `specline gate <subcommand>`                             | Gate 门禁 CLI 包装（spec/semantic/contract/build/lint/test/list） |
+| `specline hook session-start [--platform <p>]`           | 跨平台 SessionStart hook                                       |
+| `specline platforms`                                     | 查看已部署平台列表                                                   |
+| `specline update`                                        | 检查 CLI 新版本                                                  |
+| `specline --version`                                     | 显示版本号                                                       |
+| `specline --help`                                        | 显示帮助信息                                                      |
+
+
+
 
 ## 子 Agent 列表
 
-| Agent | 职责 |
-| ------- | ------ |
-| `specline-spec-creator` | 根据自然语言需求生成 proposal/design/tasks/spec |
-| `specline-spec-reviewer` | 审核规格的完整性、一致性和覆盖度 |
-| `specline-frontend-dev` | UI 组件、页面、样式、交互；visible-ui 时执行 frontend-design 五阶段流程 |
-| `specline-backend-dev` | API 端点、数据模型、业务逻辑 |
-| `specline-config-dev` | Shell 脚本、配置文件、Markdown 文档 |
-| `specline-code-reviewer` | 代码质量、安全性、可维护性；可见 UI 的证据型设计审查 |
-| `specline-config-reviewer` | 配置文件语法、Shell 脚本安全性审查 |
-| `specline-test-writer` | 黑盒测试编写（只看 Spec 不读源码） |
-| `specline-test-runner` | 执行测试并分类失败原因 |
-| `specline-explore-assistant` | 设计压力测试，辅助探索模式 |
+
+| Agent                        | 职责                                                  |
+| ---------------------------- | --------------------------------------------------- |
+| `specline-spec-creator`      | 根据自然语言需求生成 proposal/design/tasks/spec               |
+| `specline-spec-reviewer`     | 审核规格的完整性、一致性和覆盖度                                    |
+| `specline-frontend-dev`      | UI 组件、页面、样式、交互；visible-ui 时执行 frontend-design 五阶段流程 |
+| `specline-backend-dev`       | API 端点、数据模型、业务逻辑                                    |
+| `specline-config-dev`        | Shell 脚本、配置文件、Markdown 文档                           |
+| `specline-code-reviewer`     | 代码质量、安全性、可维护性；可见 UI 的证据型设计审查                        |
+| `specline-config-reviewer`   | 配置文件语法、Shell 脚本安全性审查                                |
+| `specline-test-writer`       | 黑盒测试编写（只看 Spec 不读源码）                                |
+| `specline-test-runner`       | 执行测试并分类失败原因                                         |
+| `specline-explore-assistant` | 设计压力测试，辅助探索模式                                       |
+
+
+
 
 ## Skills 列表
 
-| Skill | 入口 | 说明 |
-| ------- | ------ | ------ |
-| `specline-pipeline` | `/specline-pipeline <需求>` | 完整开发流水线编排 |
-| `specline-quickfix` | `/specline-quickfix <描述>` | 轻量修复（1-3 文件） |
-| `specline-propose` | 由 pipeline 调度 | 生成 Spec 规划文件（含 UI Design Brief 合同） |
-| `specline-apply-change` | 由 pipeline 调度 | 执行 tasks.md 中的任务 |
-| `specline-explore` | `/specline-explore` | 探索模式；按 ASCII / HTML 原型 / 可编辑 Diagram 路由表达方式 |
-| `specline-visualize` | `/specline-visualize` | 生成可持续迭代的自包含单文件 HTML 原型 |
-| `specline-init-web` | `/specline-init-web [目录]` | 安全生成 React/Vue + Vite + TypeScript + Go/Gin Web 骨架 |
-| `specline-diagram` | `/specline-diagram` | 上游 MCP 便利入口：可编辑 `.drawio`；缺 MCP 时首次 setup + 重载；失败回退 ASCII |
-| `specline-archive-change` | 由 pipeline 调度 | 归档完成的 Change |
-| `specline-knowledge` | `/specline-knowledge` | AI 知识库管理 |
-| `frontend-design` | 由 frontend Agent 加载 | 可见 UI 设计纪律（跨平台内置，附 Apache-2.0 归属） |
+
+| Skill                     | 入口                        | 说明                                                        |
+| ------------------------- | ------------------------- | --------------------------------------------------------- |
+| `specline-pipeline`       | `/specline-pipeline <需求>` | 完整开发流水线编排                                                 |
+| `specline-quickfix`       | `/specline-quickfix <描述>` | 轻量修复（1-3 文件）                                              |
+| `specline-propose`        | 由 pipeline 调度             | 生成 Spec 规划文件（含 UI Design Brief 合同）                        |
+| `specline-apply-change`   | 由 pipeline 调度             | 执行 tasks.md 中的任务                                          |
+| `specline-explore`        | `/specline-explore`       | 探索模式；按 ASCII / HTML 原型 / 可编辑 Diagram 路由表达方式               |
+| `specline-visualize`      | `/specline-visualize`     | 生成可持续迭代的自包含单文件 HTML 原型                                    |
+| `specline-init-web`       | `/specline-init-web [目录]` | 安全生成 React/Vue + Vite + TypeScript + Go/Gin Web 骨架        |
+| `specline-diagram`        | `/specline-diagram`       | 上游 MCP 便利入口：可编辑 `.drawio`；缺 MCP 时首次 setup + 重载；失败回退 ASCII |
+| `specline-archive-change` | 由 pipeline 调度             | 归档完成的 Change                                              |
+| `specline-knowledge`      | `/specline-knowledge`     | AI 知识库管理                                                  |
+| `frontend-design`         | 由 frontend Agent 加载       | 可见 UI 设计纪律（跨平台内置，附 Apache-2.0 归属）                         |
+
+
+DSH 上使用同一套用户向斜杠；Skill 仅用户可调，模型不能 `skill()` 自己开流水线。`frontend-design` 在 DSH 也不是斜杠。
 
 ## 确定性门禁
 
 每个门禁都是 Shell 脚本，`exit 0` = 通过，`exit 1` = 失败：
 
-| 门禁 | 检查内容 |
-| ------ | --------- |
-| Spec | 结构性检查 + 语义检查（Covers 引用悬空、依赖环路、异常场景缺失、模糊需求） |
+
+| 门禁       | 检查内容                                                                           |
+| -------- | ------------------------------------------------------------------------------ |
+| Spec     | 结构性检查 + 语义检查 + Testable 任务必须在 `Files:` 声明 Gate 可识别的测试路径（不查文件是否已存在） |
 | Contract | `execution-contract.md` 存在、approved、source hash fresh、task/files/testable 映射完整 |
-| Build | 编译检查 + Testable 任务单元测试文件存在性 |
-| Lint | Linter 退出码 + code-review.json error 数量 |
-| Test | 测试框架退出码 + 覆盖率阈值 |
-| Archive | 归档目录结构 + 必要文件完整性 |
+| Build    | 编译检查 + Testable 任务已声明测试文件的存在性（多语言模式，不限 `tests/unit/`） |
+| Lint     | Linter 退出码 + code-review.json error 数量                                         |
+| Test     | 测试框架退出码 + 覆盖率阈值                                                                |
+| Archive  | 归档目录结构 + 必要文件完整性                                                               |
+
+
+
 
 ## 环境要求
 
@@ -356,7 +447,10 @@ PHASE 5: ARCHIVE（归档）
   - macOS 预装
   - Linux: `apt install jq`
   - Windows: `choco install jq`
-- **支持的 AI 编码平台**（至少一个）：Cursor / Claude Code / Codex / OpenCode
+- **支持的 AI 编码平台**（文件部署，至少一个，或 `init --platform none`）：Cursor / Claude Code / Codex / OpenCode
+- **可选运行时**：DeepSeek Harness（DSH，预览）经 `dsh plugin add dsh-specline` 接入；不是 `specline init --platform` 合法值；插件另需本机 Specline CLI 跑 Gate / init
+
+
 
 ## License
 

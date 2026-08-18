@@ -132,10 +132,10 @@ specline gate artifacts --change "<name>" --json
 - Depends: (none)
 - Covers: Requirement: 用户数据模型
 - Testable: true
-- Files: server/models/user.py
+- Files: server/models/user.py, tests/unit/models/test_user.py
 ```
 
-> 任务粒度适中，Files 范围明确，Covers 可追溯到具体 Requirement。
+> 任务粒度适中，Files 范围明确，Covers 可追溯到具体 Requirement。`Testable: true` 的 `Files:` 必须带至少 1 条命中 Gate 共享模式的测试路径（此处 `tests/unit/...`；也可为 `*_test.go`、`*.test.ts`/`*.spec.ts`、`src/*/tests.rs` 等与 `pipeline-gate.sh` 相同的模式）。
 
 ❌ **不好的任务拆分**：
 
@@ -147,6 +147,19 @@ specline gate artifacts --change "<name>" --json
 
 > 太粗：Files 范围太大，没有 Covers 追溯链，Depends 缺失导致无法判断批次。
 
+❌ **不好的任务拆分（`Testable: true` + 只有实现文件）**：
+
+```markdown
+## 1. 数据模型 [ ]
+- Type: backend
+- Depends: (none)
+- Covers: Requirement: 用户数据模型
+- Testable: true
+- Files: server/models/user.py
+```
+
+> `Testable: true` 但 `Files:` 只有实现文件、没有命中共享模式的测试路径。即使 tasks.md 末尾有「测试文件归属」表格，也不满足 Gate——Gate 只看每个任务的 `Files:`。Spec Gate 会失败（「未在 Files 中声明测试文件」）。
+
 ---
 
 ### 关键原则速查
@@ -157,7 +170,7 @@ specline gate artifacts --change "<name>" --json
 | 独立可测 | 每个任务可独立验证完成状态 |
 | 文件不交叠 | 第 1 批次（Depends: none）任务的文件集合无交集 |
 | 可追溯 | 每个任务必须通过 Covers 追溯到具体 Requirement/Scenario |
-| Testable 标注 | 无依赖 + 有可测代码 + 非 config/docs → Testable: true |
+| Testable 标注 | 无依赖 + 有可测代码 + 非 config/docs → Testable: true；标 true 时该任务 `Files:` 必须含命中 Gate 共享模式的测试路径 |
 
 ### 测试文件归属
 
@@ -165,11 +178,13 @@ specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」
 
 | 测试文件（目录） | 测试类型 | 负责者 |
 |-----------------|---------|-------|
-| tests/unit/<module>/ | 单元测试 | Coding Agent (Task N) |
+| tests/unit/<module>/ 或 colocated `*_test.go` / `*.test.ts` 等 | 单元测试 | Coding Agent (Task N) |
 | tests/integration/test_<capability>.py | 集成测试 | specline-test-writer |
 | tests/e2e/test_<capability>_flow.py | E2E 测试 | specline-test-writer |
 
-> - 单元测试（`tests/unit/` 或 `tests/models/`）归属 coding agent
+> **Gate 只看每个任务 `Files:`，不看本表。** 末尾「测试文件归属」表格用于划分 coding agent 与 specline-test-writer 的目录边界，**不满足** Spec/Build Gate。`Testable: true` 必须在**该任务自己的 `Files:`** 中声明至少 1 条命中共享模式的测试路径（与 `pipeline-gate.sh` 的 `list_testable_declared_tests` 相同：`tests/unit|models`、`*_test.go`、`*.test.ts`/`*.spec.ts`、`src/*/tests.rs`）。表格有、任务 Files 没有 → Spec Gate 仍失败。
+>
+> - 单元测试（`tests/unit/`、`tests/models/` 或 Gate 认可的 colocated 路径）归属 coding agent，且必须写进对应任务的 `Files:`
 > - 集成测试（`tests/integration/`）和 E2E 测试（`tests/e2e/`）归属 specline-test-writer
 > - coding agent 和 test-writer 应只在自己的边界内编写测试文件
 
@@ -196,6 +211,7 @@ specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」
 | "任务拆解是多余的，我能直接做" | 不拆解就无法并行、无法断点续跑、无法追溯。10 分钟的拆解省下 2 小时的重做。 |
 | "并行度 50% 够了，不用追求 60%" | 60% 不是硬指标，但 <50% 意味着功能边界划分不合理——大概率任务之间耦合太紧。 |
 | "测试文件归属表格我后面补" | 补的从来不会补。没有归属表格，coding agent 和 test-writer 会踩到对方的文件。 |
+| "归属表格写了就算声明了测试文件" | Gate 只看每个任务 `Files:`。表格不能代替声明；`Testable: true` 但 Files 无测试路径时 Spec Gate 失败。 |
 
 ## 验证清单
 
@@ -205,5 +221,6 @@ specline-spec-creator 生成的 tasks.md 末尾会包含「测试文件归属」
 - [ ] spec.md 包含：Purpose + Requirements，每个 Requirement ≥1 Scenario（含 WHEN/THEN），正常路径（Happy Path）+ 至少 1 个异常场景
 - [ ] design.md 包含：Architecture Overview、Key Design Decisions（理由+替代方案）、Data Flow、Component Interaction、**Architecture Impact Analysis**（侵入点/模块边界/依赖方向/数据影响/接口兼容性，每项带置信度 ✅/⚠️）、**对外接口契约**（如有 test-writer 测试任务；CLI/HTTP/模块导出表格）
 - [ ] tasks.md 每个任务标注完整（Type/Depends/Covers/Testable/Files），Depends: (none) 占比 ≥ 60%，第 1 批次 Files 无重叠
-- [ ] 测试文件归属表格存在：单元测试归属 coding agent，集成/E2E 归属 test-writer
+- [ ] 每个 `Testable: true` 任务的 `Files:` 至少包含 1 条命中 Gate 共享模式的测试路径（`tests/unit|models`、`*_test.go`、`*.test.ts`/`*.spec.ts`、`src/*/tests.rs`）；不得用末尾「测试文件归属」表格代替
+- [ ] 测试文件归属表格存在：单元测试归属 coding agent，集成/E2E 归属 test-writer（本表不满足 Spec/Build Gate；Gate 只看每个任务 `Files:`）
 - [ ] `specline gate artifacts --json` 确认 4 个文件齐全

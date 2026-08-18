@@ -254,7 +254,7 @@ specline-spec-reviewer 审核三份文件：
 specline gate spec --change "<name>"
 ```
 
-校验内容：`proposal.md` + `design.md` + `tasks.md` 存在且每个任务标注完整（Type/Depends/Covers/Files），每个 Requirement 至少被 1 个 task 引用，第 1 批次 Files 无重叠，至少 1 个任务 Depends: (none)。
+校验内容：`proposal.md` + `design.md` + `tasks.md` 存在且每个任务标注完整（Type/Depends/Covers/Files），每个 Requirement 至少被 1 个 task 引用，第 1 批次 Files 无重叠，至少 1 个任务 Depends: (none)。对每个 `Testable: true` 任务，`Files:` 必须声明至少 1 条命中共享模式的测试路径（与 `pipeline-gate.sh` 的 `list_testable_declared_tests` 相同：`tests/unit|models`、`*_test.go`、`*.test.ts`/`*.spec.ts`、`src/*/tests.rs`）；只检查声明，不检查该路径在磁盘上是否已存在。
 
 exit code 0 = 通过，写入 passed。exit code != 0 = 失败，读取 stderr 展示给用户。
 
@@ -408,7 +408,7 @@ specline gate build --change "<name>"
 
 Build Gate 校验内容：
 - 编译/语法检查（原有逻辑）
-- **单元测试文件存在性检查**（新增）：对 Testable=true 的任务，检查其 `tests/unit/` 和 `tests/models/` 下的单元测试文件是否存在且语法正确。如果 Testable=true 的任务未产出对应测试文件，Build Gate 失败
+- **单元测试文件存在性检查**：对每个 `Testable: true` 任务，从该任务 `Files:` 取出命中共享模式的测试路径（多语言，不限于 `tests/unit/`：`tests/unit|models`、`*_test.go`、`*.test.ts`/`*.spec.ts`、`src/*/tests.rs`），要求这些文件在项目根下存在且语法正确。声明缺失或文件不存在则 Build Gate 失败。0 个 `Testable: true` 时跳过此项。
 - **对外接口契约签名检查**（新增）：以 tasks.md 为决策源头——仅当 tasks.md 末尾「测试文件归属」表格中存在 specline-test-writer 负责的测试时，才检查 design.md 的「对外接口契约」章节：
   - 有 test-writer 任务但缺契约章节 → 阻断（报错：缺契约）
   - 有契约 → 逐项检查 CLI 命令注册、HTTP 路径注册、模块导出声明是否存在（只检查签名存在性，不检查语义正确性）

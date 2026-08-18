@@ -192,7 +192,7 @@ What would you like to do?
 
 - [ ] 开始前已运行 Contract Gate；如合同 approved + fresh，已优先读取 execution-contract.md
 - [ ] 每个任务的实现范围未超出 Files 声明
-- [ ] 每个 Testable=true 的任务产出了测试文件（在 tests/unit/ 或 tests/models/）
+- [ ] 每个 `Testable: true` 的任务产出的测试文件必须是该任务 `Files:` 中命中共享模式的路径（多语言：`tests/(unit|models)/`、`*_test.go`、`*.test.ts`/`*.spec.ts`、`src/*/tests.rs`；以该任务 `Files:` 声明为准，不限于 `tests/unit/` 或 `tests/models/`）
 - [ ] tasks.md 中每个已完成任务的 `[ ]` 已改为 `[x]`
 - [ ] task-{id}-result.json 已写入 .tmp/ 目录
 - [ ] 本 session 修改的文件与 tasks.md 的 Files 声明一致
